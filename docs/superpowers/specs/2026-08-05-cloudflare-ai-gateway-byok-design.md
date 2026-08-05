@@ -20,14 +20,13 @@ This design defines an independent npm plugin, `opencode-cloudflare-ai-gateway-b
 - A single new OpenCode provider ID: `cloudflare-ai-gateway-byok`.
 - Model IDs use the `provider/model` form (for example, `openai/gpt-4o`, `anthropic/claude-sonnet-4`).
 - Authentication uses only the Cloudflare gateway token (`cf-aig-authorization`); upstream provider API keys are not sent from the client.
-- Credentials can come from `/connect`, `opencode.json`, or the same environment variables used by the built-in provider.
+- Credentials can come from `opencode.json` or the same environment variables used by the built-in provider.
 - The plugin is published as an npm package on GitHub Packages.
 
 ## 3. Architecture
 
 ```text
-OpenCode (/connect or opencode.json)
-  │
+OpenCode (opencode.json or environment variables)
   ▼
 Provider ID: cloudflare-ai-gateway-byok
   │

@@ -25,7 +25,7 @@ This design defines an independent npm plugin, `opencode-cloudflare-ai-gateway-b
 
 ## 3. Architecture
 
-```
+```text
 OpenCode (/connect or opencode.json)
   │
   ▼
@@ -41,12 +41,14 @@ ai-gateway-provider: createAiGateway + createUnified
 Cloudflare AI Gateway (BYOK)
   │
   ▼
-OpenAI / Anthropic / Google / Workers AI / etc.
+OpenAI / Anthropic / Google / etc. (BYOK upstreams)
 ```
+
+> **Note on Workers AI:** Workers AI is not a standard BYOK provider. It uses Cloudflare’s own inference service and requires a separate authentication path (Cloudflare API token, not gateway token), model mapping, and integration tests. This design treats Workers AI as out of scope for the BYOK provider flow unless a dedicated Workers AI path is added later.
 
 ### Core logic
 
-The plugin mirrors the built-in `cloudflare-ai-gateway` plugin in `packages/core/src/plugin/provider/cloudflare-ai-gateway.ts`. The only semantic change is the call to `createUnified`:
+The plugin mirrors the built-in `cloudflare-ai-gateway` plugin in `packages/core/src/plugin/provider/cloudflare-ai-gateway.ts`. The primary integration path is Cloudflare’s REST API when `ai-gateway-provider` exposes it; otherwise the `createUnified` path is used as a compatibility-only bridge.
 
 ```ts
 // Built-in provider (non-BYOK)
@@ -56,14 +58,16 @@ const unified = createUnified({ apiKey: config.apiKey })
 const unified = createUnified({})
 ```
 
+When `createUnified` is used only because the REST API is unavailable, document its compatibility-only status, a planned usage horizon, and a concrete migration plan to the REST API once supported.
+
 Everything else—gateway URL construction, `cf-aig-authorization`, metadata headers, cache options, and User-Agent—is kept identical.
 
 ## 4. Components
 
 | File | Responsibility |
 | --- | --- |
-| `src/index.ts` | Plugin entry point, exports the OpenCode `Plugin` function. |
-| `src/cloudflare-ai-gateway-byok.ts` | Core provider logic, registers the `ctx.aisdk.sdk` hook. |
+| `src/index.ts` | Plugin entry point, exports the OpenCode `Plugin` object. |
+| `src/cloudflare-ai-gateway-byok.ts` | Core provider logic, registers the public auth/provider hook. |
 | `src/env.ts` | Resolves account, gateway, and token from environment variables and config options. |
 | `test/cloudflare-ai-gateway-byok.test.ts` | Tests based on the built-in provider's test file, adapted for BYOK behavior. |
 | `package.json` | GitHub Packages npm configuration, peer dependencies, scripts. |
@@ -84,6 +88,7 @@ Example `opencode.json`:
   "provider": {
     "cloudflare-ai-gateway-byok": {
       "name": "Cloudflare AI Gateway (BYOK)",
+      "npm": "ai-gateway-provider",
       "models": {
         "openai/gpt-4o": {},
         "anthropic/claude-sonnet-4": {}
@@ -100,8 +105,10 @@ Example `opencode.json`:
 1. Search for **Cloudflare AI Gateway BYOK**.
 2. Enter **Account ID**.
 3. Enter **Gateway ID**.
-4. Enter **Cloudflare API token**.
+4. Enter **Cloudflare API token** with the **AI Gateway Run** permission. This permission applies to all Gateways and stored BYOK keys in the account; `gatewayId` alone cannot restrict access to a single Gateway.
 5. Run `/models` to choose a model.
+
+> **Tenant isolation:** Because the API token grants account-wide access, isolate tenants by using separate Cloudflare accounts or route through a Worker binding that enforces per-gateway authorization.
 
 ### Environment variables
 
@@ -146,8 +153,11 @@ export CLOUDFLARE_API_TOKEN=your-api-token
 import type { Plugin } from "@opencode-ai/plugin"
 import { CloudflareAIGatewayBYOK } from "./cloudflare-ai-gateway-byok"
 
-export const CloudflareAIGatewayBYOKPlugin: Plugin = async (ctx) => {
-  await CloudflareAIGatewayBYOK(ctx)
+export const CloudflareAIGatewayBYOKPlugin: Plugin = () => {
+  return {
+    name: "@opencode-ai/cloudflare-ai-gateway-byok",
+    hooks: [CloudflareAIGatewayBYOK]
+  }
 }
 ```
 
@@ -156,47 +166,45 @@ export const CloudflareAIGatewayBYOKPlugin: Plugin = async (ctx) => {
 ```ts
 import os from "os"
 import { Effect } from "effect"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import type { AuthHook, ProviderHook } from "@opencode-ai/plugin"
 
-export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      yield* ctx.aisdk.sdk(
-        Effect.fn(function* (evt) {
-          if (evt.package !== "ai-gateway-provider") return
-          if (evt.options.baseURL) return
+export const CloudflareAIGatewayBYOK: AuthHook = (ctx) =>
+  Effect.gen(function* () {
+    yield* ctx.auth("ai-gateway-provider", function* (evt) {
+      if (evt.package !== "ai-gateway-provider") return
+      if (evt.options.baseURL) return
 
-          const config = gatewayConfig(evt.options)
-          if (!config) return
+      const config = gatewayConfig(evt.options)
+      if (!config) return
 
-          const metadata = gatewayMetadata(evt.options)
-          const { createAiGateway } = yield* Effect.promise(() =>
-            import("ai-gateway-provider")
-          ).pipe(Effect.orDie)
-          const { createUnified } = yield* Effect.promise(() =>
-            import("ai-gateway-provider/providers/unified")
-          ).pipe(Effect.orDie)
+      const metadata = gatewayMetadata(evt.options)
+      const { createAiGateway } = yield* Effect.promise(() =>
+        import("ai-gateway-provider")
+      ).pipe(Effect.orDie)
+      const { createUnified } = yield* Effect.promise(() =>
+        import("ai-gateway-provider/providers/unified")
+      ).pipe(Effect.orDie)
 
-          const gateway = createAiGateway({
-            accountId: config.accountId,
-            gateway: config.gatewayId,
-            apiKey: config.apiKey,
-            options: gatewayOptions(evt.options, metadata),
-          } as any)
+      const gateway = createAiGateway({
+        accountId: config.accountId,
+        gateway: config.gatewayId,
+        apiKey: config.apiKey,
+        options: gatewayOptions(evt.options, metadata),
+      })
 
-          // BYOK: do not pass upstream provider API keys to createUnified
-          const unified = createUnified({})
+      // BYOK: do not pass upstream provider API keys to createUnified
+      const unified = createUnified({})
 
-          evt.sdk = {
-            languageModel(modelID: string) {
-              return gateway(unified(modelID))
-            },
-          }
-        })
-      )
+      evt.sdk = {
+        languageModel(modelID: string) {
+          return gateway(unified(modelID))
+        },
+      }
     })
-  )
+  })
 ```
+
+> **Note on hook type:** Use `AuthHook` when `/connect` is the source of credentials; use `ProviderHook` when the SDK provider itself is registered. Both hooks operate on the public `evt.package === "ai-gateway-provider"` condition, which is enabled by the `"npm": "ai-gateway-provider"` provider setting.
 
 ### Helper functions
 
@@ -240,20 +248,23 @@ The following helpers are copied from the built-in provider and kept identical:
     "test": "bun test"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "*",
-    "effect": "^3.0.0"
+    "@opencode-ai/plugin": "^0.x",
+    "effect": "^3.x"
   },
   "dependencies": {
     "ai-gateway-provider": "^0.x"
   },
   "devDependencies": {
-    "@types/bun": "*",
+    "@types/bun": "^1.x",
     "typescript": "^5.x"
+  },
+  "overrides": {
+    "effect": "$effect"
   }
 }
 ```
 
-Exact dependency versions will be pinned during implementation.
+Exact dependency versions will be pinned during implementation. The lockfile must be committed. A compatibility matrix must be added to this document before implementation, covering tested combinations of `ai-gateway-provider`, `@opencode-ai/plugin`, `effect`, `typescript`, and the OpenCode host version.
 
 ## 10. Testing
 
@@ -273,7 +284,7 @@ Covered scenarios:
 ## 11. Risks and Open Questions
 
 - The exact version of `ai-gateway-provider` and its `createUnified` API must be verified during implementation.
-- `@opencode-ai/plugin` and `@opencode-ai/core` API surface may differ between OpenCode versions; peer dependency ranges must be chosen carefully.
+- `@opencode-ai/plugin` and OpenCode host API surfaces may differ between versions; peer dependency ranges and the compatibility matrix must be chosen carefully.
 - GitHub Packages requires authenticated install; documentation must include `.npmrc` setup.
 
 ## 12. References
@@ -282,5 +293,5 @@ Covered scenarios:
 - OpenCode built-in provider tests: `packages/core/test/plugin/provider-cloudflare-ai-gateway.test.ts`
 - OpenCode plugins docs: `docs/opencode/plugins.mdx`
 - OpenCode providers docs: `docs/opencode/providers.mdx`
-- Cloudflare AI Gateway BYOK docs: https://developers.cloudflare.com/ai-gateway/
+- Cloudflare AI Gateway BYOK docs: <https://developers.cloudflare.com/ai-gateway/>
 - Reference BYOK setup: `ericallenpaul/opencode-cloudflare-ai-gateway`

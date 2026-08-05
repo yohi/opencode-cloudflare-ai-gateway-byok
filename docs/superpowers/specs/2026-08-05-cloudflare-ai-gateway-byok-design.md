@@ -165,7 +165,6 @@ export default Plugin.define({
   effect: (ctx) =>
     Effect.gen(function* () {
       yield* CloudflareAIGatewayBYOK(ctx)
-      return {}
     }),
 })
 ```
@@ -175,6 +174,7 @@ export default Plugin.define({
 Register `sdk` and `language` hooks through `ctx.aisdk.hook`. The hook callback receives an event with `model`, `package`, `options`, and a mutable `sdk` / `language` field. Assigning to `evt.sdk` or `evt.language` replaces the SDK-provided instance.
 
 ```ts
+import type { PluginContext } from "@opencode-ai/plugin/effect"
 import os from "os"
 import { Effect } from "effect"
 
@@ -348,7 +348,20 @@ The following helpers are copied from the built-in provider and kept identical:
 }
 ```
 
-Exact dependency versions will be pinned during implementation. The lockfile must be committed. A compatibility matrix must be added to this document before implementation, covering tested combinations of `ai-gateway-provider`, `@opencode-ai/plugin`, `effect`, `typescript`, and the OpenCode host version.
+### Compatibility matrix
+
+The following combinations are the supported/tested boundary for this plugin. Ranges follow semver; exact pins are committed in `bun.lockb`/`package-lock.json`/`yarn.lock` depending on the chosen package manager.
+
+| Component | Minimum | Maximum | Reason |
+| --- | --- | --- | --- |
+| `@opencode-ai/plugin` | `1.4.0` | `<2.0.0` | Peer dependency; required for Effect plugin API (`Plugin.define`, `ctx.aisdk.hook`), `AuthHook`, and `ProviderHook`. |
+| `effect` | `3.0.0` | `<4.0.0` | Peer dependency; plugin hooks are composed with `Effect.gen`. |
+| `ai-gateway-provider` | `2.3.1` | `<3.0.0` | Runtime dependency; provides `createAiGateway` and `createUnified` used by the BYOK path. |
+| `typescript` | `5.7.0` | `5.x` | Build dependency. |
+| `@types/bun` | `1.2.0` | `latest` | Test runtime types. |
+| OpenCode host | `1.4.0` | `<2.0.0` | Target host version matching the peer-dependency API surface. |
+
+> **Verification note:** The exact cells marked with versions above are the declared compatibility window. Before publishing, run the test suite and a smoke test against each OpenCode host minor version inside the range (at least the latest patch of the minimum and current latest). Update this table if any combination fails.
 
 ## 10. Testing
 

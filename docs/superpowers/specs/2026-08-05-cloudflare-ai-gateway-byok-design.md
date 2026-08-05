@@ -153,20 +153,21 @@ export CLOUDFLARE_API_TOKEN=your-api-token
 
 ### Plugin entry point
 
-Use the OpenCode v2 Effect plugin API (`@opencode-ai/plugin/effect`). The module exports `Plugin.define` as the default export. `setup`/`effect` returns a `Hooks` object; there is no top-level `name` field and the return type is `Promise<Hooks>`.
+Use the OpenCode v2 Effect plugin API (`@opencode-ai/plugin/v2/effect`). The module exports `define` as a named export. `effect` returns `Effect.Effect<void, never, R>` and the plugin object has no top-level `name` field. The default export satisfies `Plugin`.
 
 ```ts
-import { Plugin } from "@opencode-ai/plugin/effect"
+import { define } from "@opencode-ai/plugin/v2/effect"
+import type { Plugin } from "@opencode-ai/plugin/v2/effect"
 import { Effect } from "effect"
 import { CloudflareAIGatewayBYOK } from "./cloudflare-ai-gateway-byok"
 
-export default Plugin.define({
+export default define({
   id: "@opencode-ai/cloudflare-ai-gateway-byok",
   effect: (ctx) =>
     Effect.gen(function* () {
       yield* CloudflareAIGatewayBYOK(ctx)
     }),
-})
+}) satisfies Plugin
 ```
 
 ### Runtime SDK hooks
@@ -354,12 +355,12 @@ The following combinations are the supported/tested boundary for this plugin. Ra
 
 | Component | Minimum | Maximum | Reason |
 | --- | --- | --- | --- |
-| `@opencode-ai/plugin` | `1.4.0` | `<2.0.0` | Peer dependency; required for Effect plugin API (`Plugin.define`, `ctx.aisdk.hook`), `AuthHook`, and `ProviderHook`. |
-| `effect` | `3.0.0` | `<4.0.0` | Peer dependency; plugin hooks are composed with `Effect.gen`. |
+| `@opencode-ai/plugin` | `1.18.13` | `<2.0.0` | Peer dependency; required for Effect plugin API (`define`, `ctx.aisdk.hook`), `AuthHook`, and `ProviderHook`. |
+| `effect` | `4.0.0-beta.83` | `<5.0.0` | Peer dependency matching `@opencode-ai/plugin@1.18.13` internal Effect version; plugin hooks are composed with `Effect.gen`. |
 | `ai-gateway-provider` | `2.3.1` | `<3.0.0` | Runtime dependency; provides `createAiGateway` and `createUnified` used by the BYOK path. |
 | `typescript` | `5.7.0` | `5.x` | Build dependency. |
 | `@types/bun` | `1.2.0` | `latest` | Test runtime types. |
-| OpenCode host | `1.4.0` | `<2.0.0` | Target host version matching the peer-dependency API surface. |
+| OpenCode host | `1.18.13` | `<2.0.0` | Target host version matching the peer-dependency API surface. |
 
 > **Verification note:** The exact cells marked with versions above are the declared compatibility window. Before publishing, run the test suite and a smoke test against each OpenCode host minor version inside the range (at least the latest patch of the minimum and current latest). Update this table if any combination fails.
 

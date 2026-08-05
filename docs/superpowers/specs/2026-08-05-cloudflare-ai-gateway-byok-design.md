@@ -79,16 +79,19 @@ Everything else—gateway URL construction, `cf-aig-authorization`, metadata hea
 - **Model ID format:** `provider/model`, passed unchanged to `createUnified`.
 - Cloudflare's Unified API determines the upstream provider from the model prefix, and BYOK injects the stored key on the gateway side.
 
-Example `opencode.json`:
-
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@opencode-ai/cloudflare-ai-gateway-byok"],
-  "provider": {
+  "plugins": ["@opencode-ai/cloudflare-ai-gateway-byok"],
+  "providers": {
     "cloudflare-ai-gateway-byok": {
       "name": "Cloudflare AI Gateway (BYOK)",
-      "npm": "ai-gateway-provider",
+      "package": "aisdk:ai-gateway-provider",
+      "settings": {
+        "accountId": "your-account-id",
+        "gatewayId": "your-gateway-id",
+        "apiKey": "your-api-token"
+      },
       "models": {
         "openai/gpt-4o": {},
         "anthropic/claude-sonnet-4": {}
@@ -105,7 +108,7 @@ Example `opencode.json`:
 1. Search for **Cloudflare AI Gateway BYOK**.
 2. Enter **Account ID**.
 3. Enter **Gateway ID**.
-4. Enter **Cloudflare API token** with the **AI Gateway Run** permission. This permission applies to all Gateways and stored BYOK keys in the account; `gatewayId` alone cannot restrict access to a single Gateway.
+4. Enter **Cloudflare API token** with the **AI Gateway Run** permission. This permission applies account-wide; `gatewayId` alone cannot restrict access to a single Gateway.
 5. Run `/models` to choose a model.
 
 > **Tenant isolation:** Because the API token grants account-wide access, isolate tenants by using separate Cloudflare accounts or route through a Worker binding that enforces per-gateway authorization.
@@ -126,9 +129,10 @@ export CLOUDFLARE_API_TOKEN=your-api-token
 
 ```json
 {
-  "provider": {
+  "providers": {
     "cloudflare-ai-gateway-byok": {
-      "options": {
+      "package": "aisdk:ai-gateway-provider",
+      "settings": {
         "accountId": "your-account-id",
         "gatewayId": "your-gateway-id",
         "apiKey": "your-api-token"
@@ -149,64 +153,144 @@ export CLOUDFLARE_API_TOKEN=your-api-token
 
 ### Plugin entry point
 
+Use the OpenCode v2 Effect plugin API (`@opencode-ai/plugin/effect`). The module exports `Plugin.define` as the default export. `setup`/`effect` returns a `Hooks` object; there is no top-level `name` field and the return type is `Promise<Hooks>`.
+
 ```ts
-import type { Plugin } from "@opencode-ai/plugin"
+import { Plugin } from "@opencode-ai/plugin/effect"
+import { Effect } from "effect"
 import { CloudflareAIGatewayBYOK } from "./cloudflare-ai-gateway-byok"
 
-export const CloudflareAIGatewayBYOKPlugin: Plugin = () => {
-  return {
-    name: "@opencode-ai/cloudflare-ai-gateway-byok",
-    hooks: [CloudflareAIGatewayBYOK]
-  }
-}
+export default Plugin.define({
+  id: "@opencode-ai/cloudflare-ai-gateway-byok",
+  effect: (ctx) =>
+    Effect.gen(function* () {
+      yield* CloudflareAIGatewayBYOK(ctx)
+      return {}
+    }),
+})
 ```
 
-### Core hook
+### Runtime SDK hooks
+
+Register `sdk` and `language` hooks through `ctx.aisdk.hook`. The hook callback receives an event with `model`, `package`, `options`, and a mutable `sdk` / `language` field. Assigning to `evt.sdk` or `evt.language` replaces the SDK-provided instance.
 
 ```ts
 import os from "os"
 import { Effect } from "effect"
-import type { AuthHook, ProviderHook } from "@opencode-ai/plugin"
 
-export const CloudflareAIGatewayBYOK: AuthHook = (ctx) =>
+export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
   Effect.gen(function* () {
-    yield* ctx.auth("ai-gateway-provider", function* (evt) {
-      if (evt.package !== "ai-gateway-provider") return
-      if (evt.options.baseURL) return
+    yield* ctx.aisdk.hook(
+      "sdk",
+      Effect.fn(function* (evt) {
+        if (evt.package !== "ai-gateway-provider") return
+        if (evt.options.baseURL) return
 
-      const config = gatewayConfig(evt.options)
-      if (!config) return
+        const config = gatewayConfig(evt.options)
+        if (!config) return
 
-      const metadata = gatewayMetadata(evt.options)
-      const { createAiGateway } = yield* Effect.promise(() =>
-        import("ai-gateway-provider")
-      ).pipe(Effect.orDie)
-      const { createUnified } = yield* Effect.promise(() =>
-        import("ai-gateway-provider/providers/unified")
-      ).pipe(Effect.orDie)
+        const metadata = gatewayMetadata(evt.options)
+        const { createAiGateway } = yield* Effect.promise(() =>
+          import("ai-gateway-provider")
+        ).pipe(Effect.orDie)
 
-      const gateway = createAiGateway({
-        accountId: config.accountId,
-        gateway: config.gatewayId,
-        apiKey: config.apiKey,
-        options: gatewayOptions(evt.options, metadata),
+        evt.sdk = createAiGateway({
+          accountId: config.accountId,
+          gateway: config.gatewayId,
+          apiKey: config.apiKey,
+          options: gatewayOptions(evt.options, metadata),
+        })
       })
+    )
 
-      // BYOK: do not pass upstream provider API keys to createUnified
-      const unified = createUnified({})
+    yield* ctx.aisdk.hook(
+      "language",
+      Effect.fn(function* (evt) {
+        if (evt.model.providerID !== "cloudflare-ai-gateway-byok") return
 
-      evt.sdk = {
-        languageModel(modelID: string) {
-          return gateway(unified(modelID))
-        },
-      }
-    })
+        const { createUnified } = yield* Effect.promise(() =>
+          import("ai-gateway-provider/providers/unified")
+        ).pipe(Effect.orDie)
+
+        // BYOK: do not pass upstream provider API keys to createUnified
+        const unified = createUnified({})
+        evt.language = evt.sdk(unified(evt.model.api.id))
+      })
+    )
   })
 ```
 
-> **Note on hook type:** Use `AuthHook` when `/connect` is the source of credentials; use `ProviderHook` when the SDK provider itself is registered. Both hooks operate on the public `evt.package === "ai-gateway-provider"` condition, which is enabled by the `"npm": "ai-gateway-provider"` provider setting.
+### Auth hook for `/connect`
 
-### Helper functions
+Register an `auth` hook so users can run `/connect cloudflare-ai-gateway-byok`. The `provider` ID must match the provider ID used in `opencode.json`. The `loader` merges credentials and metadata into the provider options; the runtime hooks then read them from `evt.options`.
+
+```ts
+import type { AuthHook, PluginContext } from "@opencode-ai/plugin"
+
+export const CloudflareAIGatewayBYOKAuth = (ctx: PluginContext) =>
+  Effect.gen(function* () {
+    const authHook: AuthHook = {
+      provider: "cloudflare-ai-gateway-byok",
+      methods: [
+        {
+          type: "api",
+          label: "Cloudflare AI Gateway (BYOK)",
+          prompts: [
+            {
+              type: "text",
+              key: "accountId",
+              message: "Enter your Cloudflare Account ID",
+              placeholder: "e.g. 1234567890abcdef1234567890abcdef",
+            },
+            {
+              type: "text",
+              key: "gatewayId",
+              message: "Enter your Cloudflare AI Gateway ID",
+              placeholder: "e.g. my-gateway",
+            },
+            {
+              type: "text",
+              key: "apiKey",
+              message: "Enter your Cloudflare AI Gateway API token",
+              placeholder: "your-api-token",
+            },
+          ],
+        },
+      ],
+      loader: (auth) =>
+        Effect.promise(async () => {
+          const credentials = await auth()
+          if (!credentials || credentials.type !== "api") return {}
+          return {
+            accountId: credentials.metadata?.accountId,
+            gatewayId: credentials.metadata?.gatewayId,
+            apiKey: credentials.key,
+          }
+        }),
+    }
+
+    return { auth: authHook }
+  })
+```
+
+> **Note on hook types:** `AuthHook` and `ProviderHook` are object types.
+> `Plugin` returns `Promise<Hooks>`. Use `ctx.aisdk.hook`.
+
+### `ProviderHook` (optional model catalog)
+
+```ts
+import type { ProviderHook, ProviderHookContext, Model } from "@opencode-ai/plugin"
+
+const byokProviderHook: ProviderHook = {
+  id: "cloudflare-ai-gateway-byok",
+  models: async (_provider, _ctx: ProviderHookContext): Promise<Record<string, Model>> => ({
+    "openai/gpt-4o": { /* Model definition */ } as Model,
+    "anthropic/claude-sonnet-4": { /* Model definition */ } as Model,
+  }),
+}
+```
+
+In practice, for the first release, require the user to declare the provider and model map in `opencode.json`. Add `ProviderHook` only when dynamic catalog discovery is required.
 
 The following helpers are copied from the built-in provider and kept identical:
 
@@ -230,15 +314,18 @@ The following helpers are copied from the built-in provider and kept identical:
 - **Main:** `dist/index.js`.
 - **Types:** `dist/index.d.ts`.
 
-### `package.json` outline
-
 ```json
 {
   "name": "@opencode-ai/cloudflare-ai-gateway-byok",
   "version": "0.1.0",
   "description": "OpenCode plugin for Cloudflare AI Gateway BYOK",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
@@ -248,18 +335,15 @@ The following helpers are copied from the built-in provider and kept identical:
     "test": "bun test"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "^0.x",
-    "effect": "^3.x"
+    "@opencode-ai/plugin": ">=1.4.0 <2.0.0",
+    "effect": ">=3.0.0 <4.0.0"
   },
   "dependencies": {
-    "ai-gateway-provider": "^0.x"
+    "ai-gateway-provider": "^2.3.1"
   },
   "devDependencies": {
-    "@types/bun": "^1.x",
-    "typescript": "^5.x"
-  },
-  "overrides": {
-    "effect": "$effect"
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0"
   }
 }
 ```

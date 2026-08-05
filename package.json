@@ -1,0 +1,38 @@
+{
+  "name": "@yohi/cloudflare-ai-gateway-byok",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.18.13 <2.0.0",
+    "effect": ">=4.0.0-beta.83 <5.0.0"
+  },
+  "dependencies": {
+    "ai-gateway-provider": "^3.1.2"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.18.13",
+    "@types/bun": "^1.2.0",
+    "effect": "4.0.0-beta.83",
+    "typescript": "^5.7.0"
+  }
+}

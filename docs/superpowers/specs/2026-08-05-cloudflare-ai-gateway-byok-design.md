@@ -105,11 +105,7 @@ Everything else—gateway URL construction, `cf-aig-authorization`, metadata hea
 
 ### `/connect`
 
-1. Search for **Cloudflare AI Gateway BYOK**.
-2. Enter **Account ID**.
-3. Enter **Gateway ID**.
-4. Enter **Cloudflare API token** with the **AI Gateway Run** permission. This permission applies account-wide; `gatewayId` alone cannot restrict access to a single Gateway.
-5. Run `/models` to choose a model.
+Not supported in this release. The v2 Effect plugin API (`@opencode-ai/plugin/v2/effect`) exposed by `@opencode-ai/plugin@1.18.13` does not include an authentication-hook registration mechanism, so `/connect cloudflare-ai-gateway-byok` cannot be implemented against the public API surface. Use environment variables or `opencode.json` to configure credentials. `/connect` support will be revisited once the OpenCode plugin API exposes a v2 auth hook.
 
 > **Tenant isolation:** Because the API token grants account-wide access, isolate tenants by using separate Cloudflare accounts or route through a Worker binding that enforces per-gateway authorization.
 
@@ -147,7 +143,7 @@ export CLOUDFLARE_API_TOKEN=your-api-token
 1. `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` environment variables.
 2. `CLOUDFLARE_API_TOKEN` environment variable.
 3. `CF_AIG_TOKEN` environment variable (fallback).
-4. Values from `/connect` or `opencode.json` (`accountId`, `gatewayId` or `gateway`, `apiKey`).
+4. Values from `opencode.json` (`accountId`, `gatewayId` or `gateway`, `apiKey`).
 
 ## 7. Implementation Details
 
@@ -175,7 +171,7 @@ export default define({
 Register `sdk` and `language` hooks through `ctx.aisdk.hook`. The hook callback receives an event with `model`, `package`, `options`, and a mutable `sdk` / `language` field. Assigning to `evt.sdk` or `evt.language` replaces the SDK-provided instance.
 
 ```ts
-import type { PluginContext } from "@opencode-ai/plugin/effect"
+import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
 import os from "os"
 import { Effect } from "effect"
 
@@ -221,61 +217,14 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
   })
 ```
 
-### Auth hook for `/connect`
+### Auth and `/connect`
 
-Register an `auth` hook so users can run `/connect cloudflare-ai-gateway-byok`. The `provider` ID must match the provider ID used in `opencode.json`. The `loader` merges credentials and metadata into the provider options; the runtime hooks then read them from `evt.options`.
+Authentication hooks (`AuthHook`) and the legacy `Hooks.auth` registration belong to the older `@opencode-ai/plugin` API, which returns `Promise<Hooks>`. The v2 Effect API (`@opencode-ai/plugin/v2/effect`) used in this plugin does not expose an auth-hook registration mechanism in `@opencode-ai/plugin@1.18.13`.
 
-```ts
-import type { AuthHook, PluginContext } from "@opencode-ai/plugin"
+Therefore, `/connect cloudflare-ai-gateway-byok` is **not supported** in this release. Credentials must be supplied through environment variables or `opencode.json`. If OpenCode adds a v2 auth hook in a future release, this section can be implemented by registering the hook and merging the credentials into `evt.options` for the runtime hooks to consume.
 
-export const CloudflareAIGatewayBYOKAuth = (ctx: PluginContext) =>
-  Effect.gen(function* () {
-    const authHook: AuthHook = {
-      provider: "cloudflare-ai-gateway-byok",
-      methods: [
-        {
-          type: "api",
-          label: "Cloudflare AI Gateway (BYOK)",
-          prompts: [
-            {
-              type: "text",
-              key: "accountId",
-              message: "Enter your Cloudflare Account ID",
-              placeholder: "e.g. 1234567890abcdef1234567890abcdef",
-            },
-            {
-              type: "text",
-              key: "gatewayId",
-              message: "Enter your Cloudflare AI Gateway ID",
-              placeholder: "e.g. my-gateway",
-            },
-            {
-              type: "text",
-              key: "apiKey",
-              message: "Enter your Cloudflare AI Gateway API token",
-              placeholder: "your-api-token",
-            },
-          ],
-        },
-      ],
-      loader: (auth) =>
-        Effect.promise(async () => {
-          const credentials = await auth()
-          if (!credentials || credentials.type !== "api") return {}
-          return {
-            accountId: credentials.metadata?.accountId,
-            gatewayId: credentials.metadata?.gatewayId,
-            apiKey: credentials.key,
-          }
-        }),
-    }
-
-    return { auth: authHook }
-  })
-```
-
-> **Note on hook types:** `AuthHook` and `ProviderHook` are object types.
-> `Plugin` returns `Promise<Hooks>`. Use `ctx.aisdk.hook`.
+> **Note on hook types:** `AuthHook` and `ProviderHook` are object types defined in the legacy `@opencode-ai/plugin` API, which returns `Promise<Hooks>`. In the v2 Effect API used here, `effect` returns `Effect.Effect<void, never, R>` and hooks are registered through `ctx.aisdk.hook`, `ctx.catalog.hook`, etc. `ProviderHook` is kept optional and is only relevant when dynamic model catalog discovery is needed;
+it is not registered through the v2 runtime hooks.
 
 ### `ProviderHook` (optional model catalog)
 
@@ -336,8 +285,8 @@ The following helpers are copied from the built-in provider and kept identical:
     "test": "bun test"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.4.0 <2.0.0",
-    "effect": ">=3.0.0 <4.0.0"
+    "@opencode-ai/plugin": ">=1.18.13 <2.0.0",
+    "effect": ">=4.0.0-beta.83 <5.0.0"
   },
   "dependencies": {
     "ai-gateway-provider": "^2.3.1"
@@ -355,7 +304,7 @@ The following combinations are the supported/tested boundary for this plugin. Ra
 
 | Component | Minimum | Maximum | Reason |
 | --- | --- | --- | --- |
-| `@opencode-ai/plugin` | `1.18.13` | `<2.0.0` | Peer dependency; required for Effect plugin API (`define`, `ctx.aisdk.hook`), `AuthHook`, and `ProviderHook`. |
+| `@opencode-ai/plugin` | `1.18.13` | `<2.0.0` | Peer dependency; required for Effect plugin API (`define`, `ctx.aisdk.hook`) and (optionally) `ProviderHook` from the legacy API. Auth hooks are not available in the v2 Effect API as of `1.18.13`. |
 | `effect` | `4.0.0-beta.83` | `<5.0.0` | Peer dependency matching `@opencode-ai/plugin@1.18.13` internal Effect version; plugin hooks are composed with `Effect.gen`. |
 | `ai-gateway-provider` | `2.3.1` | `<3.0.0` | Runtime dependency; provides `createAiGateway` and `createUnified` used by the BYOK path. |
 | `typescript` | `5.7.0` | `5.x` | Build dependency. |

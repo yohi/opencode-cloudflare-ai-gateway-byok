@@ -7,3 +7,8 @@ dist/
 *.lock
 !bun.lockb
 !bun.lock
+.worktrees/
+.omo/
+oss/
+docs/opencode/
+

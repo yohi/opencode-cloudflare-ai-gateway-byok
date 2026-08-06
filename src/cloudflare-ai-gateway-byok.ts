@@ -24,7 +24,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
           accountId,
           gateway: gatewayId,
           apiKey,
-          options,
+          options: options as any,
         })
       })
     )

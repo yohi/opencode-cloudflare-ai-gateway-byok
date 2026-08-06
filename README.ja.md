@@ -61,7 +61,7 @@ bun add @yohi/cloudflare-ai-gateway-byok
 
 ```json
 {
-  "plugins": [
+  "plugin": [
     "@yohi/cloudflare-ai-gateway-byok"
   ],
   "providers": {
@@ -97,10 +97,18 @@ bun add @yohi/cloudflare-ai-gateway-byok
 
 Cloudflare AI Gateway がサーバー側で正しいアップストリームプロバイダーキーを挿入してリクエストを行います。
 
+### テナント分離
+
+`CLOUDFLARE_API_TOKEN` はアカウントスコープで、アカウント内の複数ゲートウェイにアクセスできます。テナントを分離する場合は、Cloudflare アカウントを分けるか、ゲートウェイ単位の認可を強制する Worker binding 経由でリクエストをルーティングしてください。単一ゲートウェイに限定する場合は `CF_AIG_TOKEN` を使用します。
+
 ## 非対応の機能・制限事項
 
 - **`/connect cloudflare-ai-gateway-byok` は非対応**: OpenCode v2 Effect プラグイン API は対話型の認証フックを提供していないため、対話形式の `/connect` コマンドで認証情報を収集することはできません。
 - **Workers AI は対象外**: 本プラグインは Cloudflare AI Gateway の BYOK / 統一エンドポイントを対象としており、単体の Workers AI API は対象外です。
+
+## 技術仕様
+
+詳細なアーキテクチャ、データフロー、コンポーネント構造、およびランタイムフックの実装仕様については [SPEC.md](./SPEC.md) を参照してください。
 
 ## ライセンス
 

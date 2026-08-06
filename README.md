@@ -76,7 +76,7 @@ Environment variables always take precedence over values in `opencode.json`.
 
 ```json
 {
-  "plugins": [
+  "plugin": [
     "@yohi/cloudflare-ai-gateway-byok"
   ],
   "providers": {
@@ -117,6 +117,13 @@ Cloudflare AI Gateway dashboard. The plugin only sends:
 Cloudflare AI Gateway then injects the correct upstream provider key on the
 server side.
 
+### Tenant isolation
+
+`CLOUDFLARE_API_TOKEN` is account-scoped and can access gateways across the
+account. For tenant isolation, use separate Cloudflare accounts or route
+requests through a Worker binding that enforces per-gateway authorization. Use
+`CF_AIG_TOKEN` when access should be limited to one gateway.
+
 ## What is not supported
 
 - **`/connect cloudflare-ai-gateway-byok`** is not supported. The OpenCode v2
@@ -124,6 +131,10 @@ server side.
   `/connect` command cannot collect credentials for this provider.
 - **Workers AI** is out of scope. This plugin targets Cloudflare AI Gateway's
   BYOK/unified endpoint, not the standalone Workers AI API.
+
+## Technical specification
+
+For in-depth architecture details, data flow, component breakdown, and runtime hook implementation, see [SPEC.md](./SPEC.md).
 
 ## License
 

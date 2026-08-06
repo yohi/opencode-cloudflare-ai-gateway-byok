@@ -4,6 +4,9 @@ A community plugin for [OpenCode](https://opencode.ai/) that routes LLM requests
 through a [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/)
 using the gateway's Bring-Your-Own-Key (BYOK) mode.
 
+[日本語の README](./README.ja.md)
+
+
 > This is a community project and is **not built or officially supported** by the
 > OpenCode team.
 

@@ -33,7 +33,7 @@ jobs:
           scope: '@yohi'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
         if: ${{ steps.release.outputs.release_created }}
 
       - name: Build

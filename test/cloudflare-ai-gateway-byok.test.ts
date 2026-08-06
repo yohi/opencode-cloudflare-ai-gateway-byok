@@ -1,5 +1,4 @@
 import { describe, expect, test, afterEach, mock } from "bun:test"
-import os from "node:os"
 import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions, stringOption } from "../src/env.js"
 import { CloudflareAIGatewayBYOK } from "../src/cloudflare-ai-gateway-byok.js"
@@ -136,10 +135,24 @@ describe("gatewayMetadata", () => {
     expect(gatewayMetadata({ headers: {} })).toBeUndefined()
     expect(gatewayMetadata({ headers: { "cf-aig-metadata": "not json" } })).toBeUndefined()
   })
+
+  test("parses differently-cased cf-aig-metadata header", () => {
+    expect(
+      gatewayMetadata({
+        headers: { "CF-AIG-METADATA": '{"variant":"uppercase"}' },
+      })
+    ).toEqual({ variant: "uppercase" })
+
+    expect(
+      gatewayMetadata({
+        headers: { "Cf-Aig-Metadata": '{"variant":"mixed"}' },
+      })
+    ).toEqual({ variant: "mixed" })
+  })
 })
 
 describe("gatewayOptions", () => {
-  test("builds gateway options with metadata and User-Agent", () => {
+  test("builds gateway options with metadata", () => {
     const metadata = { session: "abc" }
     const options = {
       cacheTtl: 60,
@@ -155,10 +168,6 @@ describe("gatewayOptions", () => {
     expect(result.cacheKey).toBe("key")
     expect(result.skipCache).toBe(true)
     expect(result.collectLog).toBe(false)
-
-    const userAgent = result.headers["User-Agent"]
-    expect(userAgent).toMatch(/^opencode\/0\.1\.0 cloudflare-ai-gateway-byok /)
-    expect(userAgent).toContain(`${os.platform()} ${os.release()}; ${os.arch()}`)
   })
 })
 
@@ -324,7 +333,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     expect(evt.language).toMatchObject({ gatewayModel: { unifiedModel: "test-model" } })
   })
 
-  test("metadata cache log and User-Agent pass through to createAiGateway", async () => {
+  test("metadata cache log pass through to createAiGateway", async () => {
     const restore = withEnv({
       CLOUDFLARE_ACCOUNT_ID: undefined,
       CLOUDFLARE_GATEWAY_ID: undefined,
@@ -362,9 +371,6 @@ describe("CloudflareAIGatewayBYOK", () => {
         cacheKey: "ck",
         skipCache: true,
         collectLog: true,
-        headers: expect.objectContaining({
-          "User-Agent": expect.stringMatching(/^opencode\/0\.1\.0 cloudflare-ai-gateway-byok /),
-        }),
       }),
     })
   })

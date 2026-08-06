@@ -21,8 +21,11 @@ so only the gateway token leaves this machine.
   enabled.
 - A gateway configured in **BYOK** mode with at least one upstream provider key
   saved in the Cloudflare dashboard.
-- A Cloudflare API token with the "AI Gateway" permission, or a gateway-scoped
-  `CF_AIG_TOKEN`.
+- A Cloudflare API token with the **AI Gateway Run** permission (account-scoped,
+  can access all gateways within the account), or a gateway-scoped `CF_AIG_TOKEN`.
+  The `CF_AIG_TOKEN` is limited to the specific gateway it was issued for. For the
+  least-privilege access to BYOK-enabled gateways, use `CF_AIG_TOKEN` when you only
+  need to reach a single gateway, otherwise use the account-scoped API token.
 
 ## Package registry setup
 
@@ -56,7 +59,7 @@ to optional plugin options in `opencode.json`.
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID.                             |
 | `CLOUDFLARE_GATEWAY_ID` | AI Gateway name / ID.                              |
 | `CLOUDFLARE_API_TOKEN`  | Primary Cloudflare API token (preferred).          |
-| `CF_AIG_TOKEN`          | Fallback gateway token used when the above is set. |
+| `CF_AIG_TOKEN`          | Fallback gateway token used when `CLOUDFLARE_API_TOKEN` is not set. |
 
 Token precedence:
 
@@ -75,9 +78,12 @@ Environment variables always take precedence over values in `opencode.json`.
   ],
   "providers": {
     "cloudflare-ai-gateway-byok": {
-      "accountId": "${env.CLOUDFLARE_ACCOUNT_ID}",
-      "gatewayId": "${env.CLOUDFLARE_GATEWAY_ID}",
-      "apiKey": "${env.CLOUDFLARE_API_TOKEN}",
+      "package": "ai-gateway-provider",
+      "settings": {
+        "accountId": "{env:CLOUDFLARE_ACCOUNT_ID}",
+        "gatewayId": "{env:CLOUDFLARE_GATEWAY_ID}",
+        "apiKey": "{env:CLOUDFLARE_API_TOKEN}"
+      },
       "models": {
         "openai/gpt-4o": {
           "enabled": true

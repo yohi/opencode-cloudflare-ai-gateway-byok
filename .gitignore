@@ -3,6 +3,7 @@ dist/
 .DS_Store
 *.tgz
 .env
+.env.*
 *.lock
 !bun.lockb
 !bun.lock

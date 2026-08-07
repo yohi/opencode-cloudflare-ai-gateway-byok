@@ -72,8 +72,9 @@ export function patchGlobalFetch(): void {
         } else if (isRequest) {
           try {
             bodyStr = await input.clone().text()
-          } catch (e) {
-            console.warn("[CloudflareAIGatewayBYOK] Failed to clone/read request body:", e)
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error)
+            console.warn(`[CloudflareAIGatewayBYOK] Failed to clone/read request body: ${msg}`)
           }
         }
 
@@ -88,8 +89,9 @@ export function patchGlobalFetch(): void {
                 body: JSON.stringify(parsed),
               })
             )
-          } catch (e) {
-            console.warn("[CloudflareAIGatewayBYOK] Failed to parse request body JSON:", e)
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error)
+            console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
           }
         }
         return originalFetch(input, { ...init, headers })

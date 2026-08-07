@@ -74,7 +74,7 @@ Credentials and settings are resolved in the following strict order:
 
 ```json
 {
-  "plugin": [
+  "plugins": [
     "@yohi/cloudflare-ai-gateway-byok"
   ],
   "providers": {
@@ -97,7 +97,7 @@ Credentials and settings are resolved in the following strict order:
 ### Limitations
 
 - **/connect Command:** `/connect cloudflare-ai-gateway-byok` is unsupported in this release because OpenCode's v2 Effect plugin API (`@opencode-ai/plugin/v2/effect`) does not expose an interactive authentication hook registration mechanism. Credentials must be supplied via environment variables or `opencode.json`.
-- **Tenant isolation:** `CLOUDFLARE_API_TOKEN` is account-scoped. Isolate tenants with separate Cloudflare accounts or a Worker binding that enforces per-gateway authorization. Use `CF_AIG_TOKEN` for a gateway-scoped token.
+- **Tenant isolation:** `CLOUDFLARE_API_TOKEN` and `CF_AIG_TOKEN` with the AI Gateway Run permission are account-scoped. Isolate tenants with separate Cloudflare accounts or a Worker binding that enforces per-gateway authorization. See the [Cloudflare API token documentation](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/).
 
 ---
 
@@ -135,6 +135,18 @@ export default define({
    - Dynamically imports `ai-gateway-provider/providers/unified`.
    - Calls `createUnified({})` with an empty object (BYOK requirement).
    - Assigns `evt.language = evt.sdk(unified(evt.model.api.id))`.
+### Plugin Entrypoint Smoke Test
+
+Before publishing, verify that the plugin loads successfully in a real OpenCode host:
+
+1. Install the minimum supported host version (`@opencode-ai/plugin@1.18.13`).
+2. Install the latest supported host version (current 1.x range).
+3. In both environments, import the plugin entrypoint (`src/index.ts`) using the host's `define` helper.
+4. Confirm the plugin object has the expected `id` and `effect` properties.
+5. Invoke `plugin.effect` with the host's actual `PluginContext` and assert that both `sdk` and `language` hooks are registered.
+6. Verify that `createUnified` is called with an empty object (BYOK requirement) and that `createAiGateway` receives the correct account, gateway, and token.
+
+This smoke test complements the existing mock `PluginContext` unit tests in `test/cloudflare-ai-gateway-byok.test.ts`.
 
 ### Deferred model catalog
 

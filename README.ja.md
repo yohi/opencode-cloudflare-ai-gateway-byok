@@ -9,14 +9,14 @@
 
 ## 概要
 
-このプラグインは OpenCode v2 Effect プラグインフックを登録し、プロバイダー ID が `cloudflare-ai-gateway-byok` であるモデルへの要求が発生した際、デフォルトの AI SDK プロバイダーを `ai-gateway-provider` に置換します。プロバイダー（OpenAI、Anthropic など）の実際の API キーは Cloudflare AI Gateway 側に保存されるため、ローカルマシンから外部に送信されるのは Cloudflare ゲートウェイトークンのみとなります。
+このプラグインは OpenCode v2 Effect プラグインフックを登録し、プロバイダー ID が `cloudflare-ai-gateway-byok` であるモデルへの要求が発生した際、デフォルトの AI SDK プロバイダーを `ai-gateway-provider` に置換します。プロバイダー（OpenAI、Anthropic など）の実際の API キーは Cloudflare AI Gateway 側に保存され、ローカルからは直接送信されません。プラグインは認証情報（Cloudflare トークン）と LLM リクエストデータ（モデル ID、プロンプトなど）を Cloudflare AI Gateway に送信し、Gateway がサーバー側で正しいアップストリームプロバイダーキーを挿入してリクエストを行います。
 
 ## 前提条件
 
 - [AI Gateway](https://developers.cloudflare.com/ai-gateway/get-started/) が有効化された Cloudflare アカウント。
 - **BYOK** モードで設定され、Cloudflare ダッシュボード上に少なくとも1つのアップストリームプロバイダーキーが保存されているゲートウェイ。
-- **AI Gateway Run** 権限を持つ Cloudflare API トークン（アカウントスコープ。アカウント内のすべてのゲートウェイにアクセス可能）、またはゲートウェイスコープの `CF_AIG_TOKEN`。  
-  `CF_AIG_TOKEN` は、それが発行された特定のゲートウェイのみに制限されます。BYOK が有効なゲートウェイに対して最小権限でアクセスしたい場合は、単一のゲートウェイにのみ接続すればよい場合に `CF_AIG_TOKEN` を使用し、それ以外の場合はアカウントスコープの API トークンを使用してください。
+- **AI Gateway Run** 権限を持つ Cloudflare API トークン（アカウントスコープ。アカウント内のすべてのゲートウェイにアクセス可能）、または `CF_AIG_TOKEN`。
+  AI Gateway Run 権限を持つトークンは、アカウント内のすべてのゲートウェイにアクセス可能です。テナントを分離する場合は、Cloudflare アカウントを分けるか、ゲートウェイ単位の認可を強制する Worker binding 経由でリクエストをルーティングしてください。[Cloudflare 認証ドキュメント](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)も参照してください。
 
 ## パッケージレジストリの設定
 
@@ -61,7 +61,7 @@ bun add @yohi/cloudflare-ai-gateway-byok
 
 ```json
 {
-  "plugin": [
+  "plugins": [
     "@yohi/cloudflare-ai-gateway-byok"
   ],
   "providers": {
@@ -99,7 +99,7 @@ Cloudflare AI Gateway がサーバー側で正しいアップストリームプ�
 
 ### テナント分離
 
-`CLOUDFLARE_API_TOKEN` はアカウントスコープで、アカウント内の複数ゲートウェイにアクセスできます。テナントを分離する場合は、Cloudflare アカウントを分けるか、ゲートウェイ単位の認可を強制する Worker binding 経由でリクエストをルーティングしてください。単一ゲートウェイに限定する場合は `CF_AIG_TOKEN` を使用します。
+`CLOUDFLARE_API_TOKEN` と `CF_AIG_TOKEN`（AI Gateway Run 権限あり）はアカウントスコープで、アカウント内の複数ゲートウェイにアクセスできます。テナントを分離する場合は、Cloudflare アカウントを分けるか、ゲートウェイ単位の認可を強制する Worker binding 経由でリクエストをルーティングしてください。
 
 ## 非対応の機能・制限事項
 

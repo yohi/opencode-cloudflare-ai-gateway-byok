@@ -9,7 +9,7 @@
 
 ## 概要
 
-このプラグインは OpenCode v2 Effect プラグインフックを登録し、プロバイダー ID が `cloudflare-ai-gateway-byok` であるモデルへの要求が発生した際、デフォルトの AI SDK プロバイダーを `ai-gateway-provider` に置換します。プロバイダー（OpenAI、Anthropic など）の実際の API キーは Cloudflare AI Gateway 側に保存され、ローカルからは直接送信されません。プラグインは認証情報（Cloudflare トークン）と LLM リクエストデータ（モデル ID、プロンプトなど）を Cloudflare AI Gateway に送信し、Gateway がサーバー側で正しいアップストリームプロバイダーキーを挿入してリクエストを行います。
+このプラグインは OpenCode v2 Effect プラグインフックを登録し、プロバイダー ID が `cloudflare-ai-gateway-byok` であるモデルへの要求が発生した際、[`ai-gateway-provider`](https://www.npmjs.com/package/ai-gateway-provider) を内部で使用して SDK を構築します。プロバイダー（OpenAI、Anthropic など）の実際の API キーは Cloudflare AI Gateway 側に保存され、ローカルからは直接送信されません。プラグインは認証情報（Cloudflare トークン）と LLM リクエストデータ（モデル ID、プロンプトなど）を Cloudflare AI Gateway に送信し、Gateway がサーバー側で正しいアップストリームプロバイダーキーを挿入してリクエストを行います。
 
 ## 前提条件
 
@@ -66,7 +66,7 @@ bun add @yohi/cloudflare-ai-gateway-byok
   ],
   "providers": {
     "cloudflare-ai-gateway-byok": {
-      "package": "ai-gateway-provider",
+      "package": "@yohi/cloudflare-ai-gateway-byok",
       "settings": {
         "accountId": "{env:CLOUDFLARE_ACCOUNT_ID}",
         "gatewayId": "{env:CLOUDFLARE_GATEWAY_ID}",
@@ -85,7 +85,7 @@ bun add @yohi/cloudflare-ai-gateway-byok
 }
 ```
 
-モデル ID は `ai-gateway-provider` の統一形式（例: `openai/gpt-4o` や `anthropic/claude-sonnet-4`）に従います。ご利用の Cloudflare AI Gateway 設定でサポートされているモデル ID であれば動作します。
+モデル ID は `provider/model` 形式（例: `openai/gpt-4o` や `anthropic/claude-sonnet-4`）を使用します。ご利用の Cloudflare AI Gateway 設定でサポートされているモデル ID であれば動作します。
 
 ## BYOK の仕組み
 

@@ -6,7 +6,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
   Effect.gen(function* () {
     yield* ctx.aisdk.sdk((evt) =>
       Effect.gen(function* () {
-        if (evt.package !== "ai-gateway-provider") return
+        if (evt.package !== "@yohi/cloudflare-ai-gateway-byok") return
         if (evt.options.baseURL !== undefined) return
 
         const config = gatewayConfig(evt.options)

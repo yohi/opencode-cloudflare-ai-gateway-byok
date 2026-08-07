@@ -207,7 +207,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     }
   }
 
-  test("sdk callback creates gateway when package is ai-gateway-provider", async () => {
+  test("sdk callback creates gateway when package is @yohi/cloudflare-ai-gateway-byok", async () => {
     const restore = withEnv({
       CLOUDFLARE_ACCOUNT_ID: undefined,
       CLOUDFLARE_GATEWAY_ID: undefined,
@@ -219,7 +219,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
-    const evt: SdkEvent = { package: "ai-gateway-provider", options: baseOptions(), model: modelStub }
+    const evt: SdkEvent = { package: "@yohi/cloudflare-ai-gateway-byok", options: baseOptions(), model: modelStub }
     const result = ctx.runSdk(evt)
     if (result) await Effect.runPromise(result)
 
@@ -269,7 +269,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
-    const evt: SdkEvent = { package: "ai-gateway-provider", options: { ...baseOptions(), baseURL: "https://example.com" }, model: modelStub }
+    const evt: SdkEvent = { package: "@yohi/cloudflare-ai-gateway-byok", options: { ...baseOptions(), baseURL: "https://example.com" }, model: modelStub }
     const result = ctx.runSdk(evt)
     if (result) await Effect.runPromise(result)
 
@@ -288,7 +288,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
-    const evt: SdkEvent = { package: "ai-gateway-provider", options: {}, model: modelStub }
+    const evt: SdkEvent = { package: "@yohi/cloudflare-ai-gateway-byok", options: {}, model: modelStub }
     const result = ctx.runSdk(evt)
     if (result) await Effect.runPromise(result)
 
@@ -346,7 +346,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
     const evt: SdkEvent = {
-      package: "ai-gateway-provider",
+      package: "@yohi/cloudflare-ai-gateway-byok",
       options: {
         ...baseOptions(),
         cacheTtl: 120,
@@ -388,7 +388,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
     const evt: SdkEvent = {
-      package: "ai-gateway-provider",
+      package: "@yohi/cloudflare-ai-gateway-byok",
       options: {
         accountId: "opt-account",
         gatewayId: "opt-gateway",
@@ -420,7 +420,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
-    const evt: SdkEvent = { package: "ai-gateway-provider", options: { apiKey: "opt-key" }, model: modelStub }
+    const evt: SdkEvent = { package: "@yohi/cloudflare-ai-gateway-byok", options: { apiKey: "opt-key" }, model: modelStub }
     const result = ctx.runSdk(evt)
     if (result) await Effect.runPromise(result)
 

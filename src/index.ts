@@ -60,7 +60,9 @@ if (!(globalThis as any).__byok_fetch_patched__) {
                 body: JSON.stringify(parsed),
               })
             )
-          } catch (e) {}
+          } catch (e) {
+            console.warn("[CloudflareAIGatewayBYOK] Failed to parse request body JSON:", e)
+          }
         }
         return originalFetch(input, { ...init, headers })
       }

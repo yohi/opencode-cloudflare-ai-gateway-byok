@@ -56,7 +56,9 @@ if (!(globalThis as any).__byok_fetch_patched__) {
                 body: JSON.stringify(parsed),
               })
             )
-          } catch (e) {}
+          } catch (e) {
+            console.warn("[CloudflareAIGatewayBYOK] Failed to parse request body JSON:", e)
+          }
         }
         return originalFetch(input, { ...init, headers })
       }
@@ -111,11 +113,12 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
           baseURL: "https://gateway.ai.cloudflare.com/v1/compat",
           fetch: Object.assign(
             (input: any, init?: any) => {
-              const headers = new Headers(init?.headers)
+              const isRequest = typeof input === "object" && input !== null && typeof input.url === "string"
+              const headers = new Headers(init?.headers ?? (isRequest ? input.headers : undefined))
               headers.delete("authorization")
               headers.delete("Authorization")
 
-                if (init && init.body && typeof init.body === "string") {
+              if (init && init.body && typeof init.body === "string") {
                 try {
                   const parsed = JSON.parse(init.body)
                   if (Array.isArray(parsed.tools) && parsed.tools.length > 128) {
@@ -132,7 +135,9 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
                       body: JSON.stringify(parsed),
                     })
                   )
-                } catch (e) {}
+                } catch (e) {
+                  console.warn("[CloudflareAIGatewayBYOK] Failed to parse request body JSON:", e)
+                }
               }
               return fetch(input, { ...init, headers })
             },

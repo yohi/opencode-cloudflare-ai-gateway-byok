@@ -20,12 +20,26 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
           () => import("ai-gateway-provider")
         ).pipe(Effect.orDie)
 
-        evt.sdk = createAiGateway({
+        const { createUnified } = yield* Effect.promise(
+          () => import("ai-gateway-provider/providers/unified")
+        ).pipe(Effect.orDie)
+
+        const gateway = createAiGateway({
           accountId,
           gateway: gatewayId,
           apiKey,
           options,
         })
+        const unified = createUnified({
+          baseURL: "https://gateway.ai.cloudflare.com/v1/compat",
+        })
+
+        evt.sdk = {
+          ...gateway,
+          languageModel(modelID: string) {
+            return gateway(unified(modelID))
+          },
+        }
       })
     )
 
@@ -34,12 +48,9 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
         if (evt.model.providerID !== "cloudflare-ai-gateway-byok") return
         if (!evt.sdk) return
 
-        const { createUnified } = yield* Effect.promise(
-          () => import("ai-gateway-provider/providers/unified")
-        ).pipe(Effect.orDie)
-
-        const unified = createUnified({})
-        evt.language = evt.sdk(unified(evt.model.api.id))
+        if (typeof evt.sdk.languageModel === "function") {
+          evt.language = evt.sdk.languageModel(evt.model.api.id)
+        }
       })
     )
   })

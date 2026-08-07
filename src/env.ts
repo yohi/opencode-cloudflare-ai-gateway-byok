@@ -11,10 +11,32 @@ type GatewayConfig = {
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 
 export function gatewayConfig(options: Record<string, unknown>): GatewayConfig | undefined {
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID ?? stringOption(options, "accountId")
+  const nested =
+    (typeof options.settings === "object" && options.settings !== null
+      ? (options.settings as Record<string, unknown>)
+      : undefined) ??
+    (typeof options.options === "object" && options.options !== null
+      ? (options.options as Record<string, unknown>)
+      : undefined) ??
+    options
+
+  const accountId =
+    process.env.CLOUDFLARE_ACCOUNT_ID ??
+    stringOption(options, "accountId") ??
+    (nested ? stringOption(nested, "accountId") : undefined)
+
   const gatewayId =
-    process.env.CLOUDFLARE_GATEWAY_ID ?? stringOption(options, "gatewayId") ?? stringOption(options, "gateway")
-  const apiKey = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_AIG_TOKEN ?? stringOption(options, "apiKey")
+    process.env.CLOUDFLARE_GATEWAY_ID ??
+    stringOption(options, "gatewayId") ??
+    stringOption(options, "gateway") ??
+    (nested ? stringOption(nested, "gatewayId") ?? stringOption(nested, "gateway") : undefined)
+
+  const apiKey =
+    process.env.CLOUDFLARE_API_TOKEN ??
+    process.env.CF_AIG_TOKEN ??
+    stringOption(options, "apiKey") ??
+    (nested ? stringOption(nested, "apiKey") : undefined)
+
   if (!accountId || !gatewayId || !apiKey) return undefined
 
   return { accountId, gatewayId, apiKey }

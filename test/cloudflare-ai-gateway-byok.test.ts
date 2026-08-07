@@ -324,13 +324,14 @@ describe("CloudflareAIGatewayBYOK", () => {
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
-    const fakeSdk = (models: unknown) => ({ gatewayModel: models })
+    const fakeSdk = {
+      languageModel: (modelId: string) => ({ gatewayModel: { unifiedModel: modelId } }),
+    }
     const evt: LanguageEvent = { model: modelStub, sdk: fakeSdk, options: {}, language: undefined }
     const result = ctx.runLanguage(evt)
     if (result) await Effect.runPromise(result)
 
-    expect(unifiedModelCalls).toEqual(["test-model"])
-    expect(evt.language).toMatchObject({ gatewayModel: { unifiedModel: "test-model" } })
+    expect(evt.language).toEqual({ gatewayModel: { unifiedModel: "test-model" } })
   })
 
   test("metadata cache log pass through to createAiGateway", async () => {

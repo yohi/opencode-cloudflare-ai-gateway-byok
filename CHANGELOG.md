@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.0.2](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.1...v1.0.2) (2026-08-07)
+
+
+### 🐛 Bug Fixes
+
+* {env:VAR} 形式の環境変数プレースホルダー展開を修正 ([126b51f](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/126b51f6d937364519208bd9119459cd9d02093f))
+* catchブロックの例外オブジェクト処理およびロギング形式のSonarルール対応 ([0439eb6](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/0439eb67b675d79bd673a17655d64e09dc1ade3d))
+* custom fetchのRequestヘッダーの継承およびJSONパース例外時のログ出力対応 ([f2ac821](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/f2ac821af0d5bd7a73ca7e40b48e8b14d1265bb4))
+* max_tokens パラメータ自動変換と 128 ツール制限および reasoning_effort のフォールバック対応 ([fa4b2da](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/fa4b2da06c6c3cf098db525bd1c7e84aaa269629))
+* OpenCode のプロバイダーローダー仕様に合わせたモジュールエクスポートと設定解析を修正 ([25b4629](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/25b4629d5a58872eaddf40ea6ba64ae76f40c37a))
+* OpenCode パラメータ互換性ガードレールおよびプロバイダー設定解析の修正 ([59f8ef6](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/59f8ef63d5eb6db7e45a0175c5ad637c1d62866b))
+* 指摘事項（null/undefined ガード追加・デバッグログ削除・Requestオブジェクト対応等）の対応 ([2fae975](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/2fae97505a36110303bde1d5bc79a02f72df607e))
+
+
+### ♻️ Refactors
+
+* address review comments on fetch patching, type safety, and options fallback ([a82fd60](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/a82fd60f37fad2f20f70847fec60c321cd590792))
+* resolve SonarCloud cognitive complexity and code smell warnings ([25c44b6](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/25c44b6a39ec2475f2e60408a4c078340e2a26b3))
+* レビュー指摘事項に基づく記述の整理とパラメータ変換・URL判定の改善 ([ac840bd](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/ac840bd653eee0503d0d6db110c4fe6570bcf272))
+* 共通ロジックの抽出による重複コード削減および各種指摘事項の修正 ([052e2c7](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/052e2c793191bd7649fb1cc4efcc9ba42566eeee))
+
+
+### 📖 Documentation
+
+* READMEのpackage設定例を@yohi/cloudflare-ai-gateway-byokに更新 ([01ad255](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/01ad255ca3ac3664103959ba557a855ed80e6112))
+
 ## [1.0.1](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.0...v1.0.1) (2026-08-07)
 
 

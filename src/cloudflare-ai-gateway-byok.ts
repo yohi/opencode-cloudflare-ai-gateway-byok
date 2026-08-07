@@ -1,72 +1,9 @@
 import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
+import { cleanParams, patchGlobalFetch, wrapModel } from "./utils.js"
 
-if (!(globalThis as any).__byok_fetch_patched__) {
-  ;(globalThis as any).__byok_fetch_patched__ = true
-  const originalFetch = globalThis.fetch
-
-  const cleanParams = (obj: any) => {
-    if (!obj || typeof obj !== "object") return
-    if (Array.isArray(obj)) {
-      for (const item of obj) cleanParams(item)
-      return
-    }
-    if (Array.isArray(obj.tools) && obj.tools.length > 0) {
-      if (obj.tools.length > 128) {
-        obj.tools = obj.tools.slice(0, 128)
-      }
-      obj.reasoning_effort = "none"
-    }
-    if (obj.max_tokens !== undefined) {
-      obj.max_completion_tokens = obj.max_completion_tokens ?? obj.max_tokens
-      delete obj.max_tokens
-    }
-    if (obj.query && typeof obj.query === "object") {
-      cleanParams(obj.query)
-    }
-  }
-
-  globalThis.fetch = Object.assign(
-    async (input: any, init?: any) => {
-      const isRequest = typeof input === "object" && input !== null && typeof input.url === "string"
-      const urlStr = isRequest ? input.url : typeof input === "string" ? input : ""
-      if (urlStr.includes("gateway.ai.cloudflare.com")) {
-        const headers = new Headers(init?.headers ?? (isRequest ? input.headers : undefined))
-        headers.delete("authorization")
-        headers.delete("Authorization")
-
-        let bodyStr: string | undefined
-        if (typeof init?.body === "string") {
-          bodyStr = init.body
-        } else if (isRequest) {
-          try {
-            bodyStr = await input.clone().text()
-          } catch (e) {}
-        }
-
-        if (bodyStr) {
-          try {
-            const parsed = JSON.parse(bodyStr)
-            cleanParams(parsed)
-            return originalFetch(
-              new Request(input, {
-                ...init,
-                headers,
-                body: JSON.stringify(parsed),
-              })
-            )
-          } catch (e) {
-            console.warn("[CloudflareAIGatewayBYOK] Failed to parse request body JSON:", e)
-          }
-        }
-        return originalFetch(input, { ...init, headers })
-      }
-      return originalFetch(input, init)
-    },
-    originalFetch,
-  )
-}
+patchGlobalFetch()
 
 export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
   Effect.gen(function* () {
@@ -121,13 +58,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
               if (init && init.body && typeof init.body === "string") {
                 try {
                   const parsed = JSON.parse(init.body)
-                  if (Array.isArray(parsed.tools) && parsed.tools.length > 128) {
-                    parsed.tools = parsed.tools.slice(0, 128)
-                  }
-                  if (parsed.max_tokens !== undefined) {
-                    parsed.max_completion_tokens = parsed.max_completion_tokens ?? parsed.max_tokens
-                    delete parsed.max_tokens
-                  }
+                  cleanParams(parsed)
                   return fetch(
                     new Request(input, {
                       ...init,
@@ -144,33 +75,6 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
             fetch,
           ),
         })
-
-        function wrapModel(model: any) {
-          return new Proxy(model, {
-            get(target, prop, receiver) {
-              if (prop === "doStream" || prop === "doGenerate") {
-                return (options: any) => {
-                  if (options) {
-                    const newOpts = { ...options }
-                    if (Array.isArray(newOpts.tools) && newOpts.tools.length > 128) {
-                      newOpts.tools = newOpts.tools.slice(0, 128)
-                    }
-                    if (newOpts.maxTokens !== undefined) {
-                      delete newOpts.maxTokens
-                    }
-                    if (newOpts.reasoningEffort === "none" || newOpts.reasoning_effort === "none") {
-                      newOpts.reasoning_effort = "none"
-                      delete newOpts.reasoningEffort
-                    }
-                    options = newOpts
-                  }
-                  return target[prop](options)
-                }
-              }
-              return Reflect.get(target, prop, receiver)
-            },
-          })
-        }
 
         evt.sdk = Object.assign(
           (modelID: string) => wrapModel(gateway(unified(modelID))),

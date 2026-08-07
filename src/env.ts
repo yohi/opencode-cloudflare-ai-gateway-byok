@@ -1,7 +1,6 @@
 import { Option, Schema } from "effect"
 import type { AiGatewayOptions } from "ai-gateway-provider"
 
-
 type GatewayConfig = {
   accountId: string
   gatewayId: string
@@ -21,20 +20,20 @@ export function gatewayConfig(options: Record<string, unknown> | null | undefine
       : undefined)
 
   const accountId =
-    process.env.CLOUDFLARE_ACCOUNT_ID ??
+    (process.env.CLOUDFLARE_ACCOUNT_ID || undefined) ??
     stringOption(options, "accountId") ??
     stringOption(nested, "accountId")
 
   const gatewayId =
-    process.env.CLOUDFLARE_GATEWAY_ID ??
+    (process.env.CLOUDFLARE_GATEWAY_ID || undefined) ??
     stringOption(options, "gatewayId") ??
     stringOption(options, "gateway") ??
     stringOption(nested, "gatewayId") ??
     stringOption(nested, "gateway")
 
   const apiKey =
-    process.env.CLOUDFLARE_API_TOKEN ??
-    process.env.CF_AIG_TOKEN ??
+    (process.env.CLOUDFLARE_API_TOKEN || undefined) ??
+    (process.env.CF_AIG_TOKEN || undefined) ??
     stringOption(options, "apiKey") ??
     stringOption(nested, "apiKey")
 
@@ -61,7 +60,6 @@ export function gatewayMetadata(options: Record<string, unknown> | null | undefi
     : undefined
 }
 
-
 export function gatewayOptions(
   options: Record<string, unknown> | null | undefined,
   metadata: AiGatewayOptions["metadata"],
@@ -85,7 +83,7 @@ export function stringOption(options: Record<string, unknown> | null | undefined
 
   const match = val.match(/^\{env:(.+)\}$/)
   if (match && match[1]) {
-    return process.env[match[1]]
+    return process.env[match[1]] || undefined
   }
   return val
 }

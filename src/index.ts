@@ -6,6 +6,87 @@ import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import { createAiGateway } from "ai-gateway-provider"
 import { createUnified } from "ai-gateway-provider/providers/unified"
 
+if (!(globalThis as any).__byok_fetch_patched__) {
+  ;(globalThis as any).__byok_fetch_patched__ = true
+  const originalFetch = globalThis.fetch
+
+  const cleanParams = (obj: any) => {
+    if (!obj || typeof obj !== "object") return
+    if (Array.isArray(obj)) {
+      for (const item of obj) cleanParams(item)
+      return
+    }
+    if (Array.isArray(obj.tools) && obj.tools.length > 0) {
+      if (obj.tools.length > 128) {
+        obj.tools = obj.tools.slice(0, 128)
+      }
+      obj.reasoning_effort = "none"
+    }
+    if (obj.max_tokens !== undefined) {
+      obj.max_completion_tokens = obj.max_completion_tokens ?? obj.max_tokens
+      delete obj.max_tokens
+    }
+    if (obj.query && typeof obj.query === "object") {
+      cleanParams(obj.query)
+    }
+  }
+
+  globalThis.fetch = Object.assign(
+    async (input: any, init?: any) => {
+      const urlStr = typeof input === "string" ? input : input?.url ?? ""
+      if (urlStr.includes("gateway.ai.cloudflare.com")) {
+        const headers = new Headers(init?.headers)
+        headers.delete("authorization")
+        headers.delete("Authorization")
+
+        if (init && init.body && typeof init.body === "string") {
+          try {
+            const parsed = JSON.parse(init.body)
+            cleanParams(parsed)
+            return originalFetch(
+              new Request(input as string, {
+                ...init,
+                headers,
+                body: JSON.stringify(parsed),
+              })
+            )
+          } catch (e) {}
+        }
+        return originalFetch(input, { ...init, headers })
+      }
+      return originalFetch(input, init)
+    },
+    originalFetch,
+  )
+}
+
+function wrapModel(model: any) {
+  return new Proxy(model, {
+    get(target, prop, receiver) {
+      if (prop === "doStream" || prop === "doGenerate") {
+        return (options: any) => {
+          if (options) {
+            const newOpts = { ...options }
+            if (Array.isArray(newOpts.tools) && newOpts.tools.length > 128) {
+              newOpts.tools = newOpts.tools.slice(0, 128)
+            }
+            if (newOpts.maxTokens !== undefined) {
+              delete newOpts.maxTokens
+            }
+            if (newOpts.reasoningEffort === "none" || newOpts.reasoning_effort === "none") {
+              newOpts.reasoning_effort = "none"
+              delete newOpts.reasoningEffort
+            }
+            options = newOpts
+          }
+          return target[prop](options)
+        }
+      }
+      return Reflect.get(target, prop, receiver)
+    },
+  })
+}
+
 export function createCloudflareAIGatewayBYOK(options: Record<string, unknown> = {}) {
   const config = gatewayConfig(options)
   const accountId = config?.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? ""
@@ -27,7 +108,7 @@ export function createCloudflareAIGatewayBYOK(options: Record<string, unknown> =
 
   return {
     languageModel(modelId: string) {
-      return gateway(unified(modelId))
+      return wrapModel(gateway(unified(modelId)))
     },
   }
 }

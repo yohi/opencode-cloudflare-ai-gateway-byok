@@ -2,12 +2,79 @@ import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
 
+if (!(globalThis as any).__byok_fetch_patched__) {
+  ;(globalThis as any).__byok_fetch_patched__ = true
+  const originalFetch = globalThis.fetch
+
+  const cleanParams = (obj: any) => {
+    if (!obj || typeof obj !== "object") return
+    if (Array.isArray(obj)) {
+      for (const item of obj) cleanParams(item)
+      return
+    }
+    if (Array.isArray(obj.tools) && obj.tools.length > 0) {
+      if (obj.tools.length > 128) {
+        obj.tools = obj.tools.slice(0, 128)
+      }
+      obj.reasoning_effort = "none"
+    }
+    if (obj.max_tokens !== undefined) {
+      obj.max_completion_tokens = obj.max_completion_tokens ?? obj.max_tokens
+      delete obj.max_tokens
+    }
+    if (obj.query && typeof obj.query === "object") {
+      cleanParams(obj.query)
+    }
+  }
+
+  globalThis.fetch = Object.assign(
+    async (input: any, init?: any) => {
+      const urlStr = typeof input === "string" ? input : input?.url ?? ""
+      if (urlStr.includes("gateway.ai.cloudflare.com")) {
+        const headers = new Headers(init?.headers)
+        headers.delete("authorization")
+        headers.delete("Authorization")
+
+        if (init && init.body && typeof init.body === "string") {
+          try {
+            const parsed = JSON.parse(init.body)
+            cleanParams(parsed)
+            return originalFetch(
+              new Request(input as string, {
+                ...init,
+                headers,
+                body: JSON.stringify(parsed),
+              })
+            )
+          } catch (e) {}
+        }
+        return originalFetch(input, { ...init, headers })
+      }
+      return originalFetch(input, init)
+    },
+    originalFetch,
+  )
+}
+
 export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
   Effect.gen(function* () {
+    if (ctx.catalog?.transform) {
+      yield* ctx.catalog.transform(({ provider }) => {
+        provider.update("cloudflare-ai-gateway-byok", (p) => {
+          if (p.api && p.api.type === "aisdk" && !p.api.url) {
+            p.api.url = "https://gateway.ai.cloudflare.com/v1/compat"
+          }
+        })
+      })
+    }
+
     yield* ctx.aisdk.sdk((evt) =>
       Effect.gen(function* () {
         if (evt.package !== "@yohi/cloudflare-ai-gateway-byok") return
-        if (evt.options.baseURL !== undefined) return
+        const customBaseURL = evt.options.baseURL
+        evt.options.baseURL = customBaseURL ?? "https://gateway.ai.cloudflare.com/v1/compat"
+
+        if (customBaseURL !== undefined) return
 
         const config = gatewayConfig(evt.options)
         if (config === undefined) return
@@ -32,12 +99,69 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
         })
         const unified = createUnified({
           baseURL: "https://gateway.ai.cloudflare.com/v1/compat",
+          fetch: Object.assign(
+            (input: any, init?: any) => {
+              const headers = new Headers(init?.headers)
+              headers.delete("authorization")
+              headers.delete("Authorization")
+
+              if (init && init.body && typeof init.body === "string") {
+                try {
+                  const parsed = JSON.parse(init.body)
+                  if (Array.isArray(parsed.tools) && parsed.tools.length > 128) {
+                    parsed.tools = parsed.tools.slice(0, 128)
+                  }
+                  if (parsed.max_tokens !== undefined) {
+                    parsed.max_completion_tokens = parsed.max_completion_tokens ?? parsed.max_tokens
+                    delete parsed.max_tokens
+                  }
+                  console.error("[DEBUG-POST-BODY-KEYS]", Object.keys(parsed), "max_tokens:", parsed.max_tokens, "max_completion_tokens:", parsed.max_completion_tokens)
+                  return fetch(
+                    new Request(input as string, {
+                      ...init,
+                      headers,
+                      body: JSON.stringify(parsed),
+                    })
+                  )
+                } catch (e) {}
+              }
+              return fetch(input, { ...init, headers })
+            },
+            fetch,
+          ),
         })
+
+        function wrapModel(model: any) {
+          return new Proxy(model, {
+            get(target, prop, receiver) {
+              if (prop === "doStream" || prop === "doGenerate") {
+                return (options: any) => {
+                  if (options) {
+                    const newOpts = { ...options }
+                    if (Array.isArray(newOpts.tools) && newOpts.tools.length > 128) {
+                      newOpts.tools = newOpts.tools.slice(0, 128)
+                    }
+                    if (newOpts.maxTokens !== undefined) {
+                      delete newOpts.maxTokens
+                    }
+                    if (newOpts.reasoningEffort === "none" || newOpts.reasoning_effort === "none") {
+                      newOpts.reasoning_effort = "none"
+                      delete newOpts.reasoningEffort
+                    }
+                    options = newOpts
+                  }
+                  return target[prop](options)
+                }
+              }
+              return Reflect.get(target, prop, receiver)
+            },
+          })
+        }
 
         evt.sdk = {
           ...gateway,
           languageModel(modelID: string) {
-            return gateway(unified(modelID))
+            return wrapModel(gateway(unified(modelID)))
           },
         }
       })

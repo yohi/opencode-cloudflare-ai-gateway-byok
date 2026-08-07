@@ -152,13 +152,15 @@ describe("gatewayMetadata", () => {
 })
 
 describe("gatewayOptions", () => {
-  test("builds gateway options with metadata", () => {
+  test("builds gateway options with metadata and nested fallback", () => {
     const metadata = { session: "abc" }
     const options = {
-      cacheTtl: 60,
-      cacheKey: "key",
-      skipCache: true,
-      collectLog: false,
+      settings: {
+        cacheTtl: 60,
+        cacheKey: "key",
+        skipCache: true,
+        collectLog: false,
+      },
     }
 
     const result = gatewayOptions(options, metadata)
@@ -169,7 +171,72 @@ describe("gatewayOptions", () => {
     expect(result.skipCache).toBe(true)
     expect(result.collectLog).toBe(false)
   })
+
+  test("prefers top-level options over nested settings", () => {
+    const metadata = { session: "abc" }
+    const options = {
+      cacheTtl: 120,
+      cacheKey: "top-key",
+      skipCache: false,
+      collectLog: true,
+      settings: {
+        cacheTtl: 60,
+        cacheKey: "nested-key",
+        skipCache: true,
+        collectLog: false,
+      },
+    }
+
+    const result = gatewayOptions(options, metadata)
+
+    expect(result.cacheTtl).toBe(120)
+    expect(result.cacheKey).toBe("top-key")
+    expect(result.skipCache).toBe(false)
+    expect(result.collectLog).toBe(true)
+  })
 })
+
+describe("patchGlobalFetch & utils", () => {
+  test("handles URL object inputs correctly", async () => {
+    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+    let capturedUrl = ""
+    const originalFetch = globalThis.fetch
+    const mockFetch = (async (input: Parameters<typeof fetch>[0]) => {
+      capturedUrl = input instanceof URL ? input.href : typeof input === "string" ? input : (input as Request).url
+      return new Response("ok")
+    }) as typeof fetch
+    globalThis.fetch = mockFetch
+
+    const { patchGlobalFetch } = await import("../src/utils.js")
+    patchGlobalFetch()
+
+    expect(globalThis.fetch).not.toBe(mockFetch)
+
+    const targetUrl = new URL("https://gateway.ai.cloudflare.com/v1/compat/chat/completions")
+    await globalThis.fetch(targetUrl)
+    expect(capturedUrl).toBe(targetUrl.href)
+
+    globalThis.fetch = originalFetch
+    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+  })
+
+  test("wrapModel transforms maxTokens to maxOutputTokens", async () => {
+    const { wrapModel } = await import("../src/utils.js")
+    let receivedOptions: Record<string, unknown> | undefined
+    const mockModel = {
+      doGenerate: (opts: Record<string, unknown>) => {
+        receivedOptions = opts
+      },
+    }
+
+    const wrapped = wrapModel(mockModel)
+    wrapped.doGenerate({ maxTokens: 100 })
+
+    expect(receivedOptions?.maxOutputTokens).toBe(100)
+    expect(receivedOptions?.maxTokens).toBeUndefined()
+  })
+})
+
 
 const modelStub = {
   providerID: "cloudflare-ai-gateway-byok",
@@ -324,13 +391,14 @@ describe("CloudflareAIGatewayBYOK", () => {
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
-    const fakeSdk = (models: unknown) => ({ gatewayModel: models })
+    const fakeSdk = {
+      languageModel: (modelId: string) => ({ gatewayModel: { unifiedModel: modelId } }),
+    }
     const evt: LanguageEvent = { model: modelStub, sdk: fakeSdk, options: {}, language: undefined }
     const result = ctx.runLanguage(evt)
     if (result) await Effect.runPromise(result)
 
-    expect(unifiedModelCalls).toEqual(["test-model"])
-    expect(evt.language).toMatchObject({ gatewayModel: { unifiedModel: "test-model" } })
+    expect(evt.language as any).toEqual({ gatewayModel: { unifiedModel: "test-model" } })
   })
 
   test("metadata cache log pass through to createAiGateway", async () => {

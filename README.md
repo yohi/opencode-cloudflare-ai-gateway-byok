@@ -12,12 +12,13 @@ using the gateway's Bring-Your-Own-Key (BYOK) mode.
 
 ## What it does
 
-The plugin registers an OpenCode v2 Effect plugin hook that replaces the default
-AI SDK provider with `ai-gateway-provider` whenever OpenCode wants to talk to a
-model whose provider ID is `cloudflare-ai-gateway-byok`. The actual upstream
-provider API keys (OpenAI, Anthropic, etc.) are stored and managed in Cloudflare AI Gateway,
-so they are never sent from this machine. The plugin sends authentication (Cloudflare token)
-and LLM request data (model ID, prompts, etc.) to the Gateway, which then injects the correct
+The plugin registers an OpenCode v2 Effect plugin hook that intercepts SDK
+initialization for the `cloudflare-ai-gateway-byok` provider and builds an
+[`ai-gateway-provider`](https://www.npmjs.com/package/ai-gateway-provider)
+SDK internally. The actual upstream provider API keys (OpenAI, Anthropic, etc.)
+are stored and managed in Cloudflare AI Gateway, so they are never sent from
+this machine. The plugin sends authentication (Cloudflare token) and LLM request
+data (model ID, prompts, etc.) to the Gateway, which then injects the correct
 upstream provider key on the server side.
 
 ## Prerequisites
@@ -84,7 +85,7 @@ Environment variables always take precedence over values in `opencode.json`.
   ],
   "providers": {
     "cloudflare-ai-gateway-byok": {
-      "package": "ai-gateway-provider",
+      "package": "@yohi/cloudflare-ai-gateway-byok",
       "settings": {
         "accountId": "{env:CLOUDFLARE_ACCOUNT_ID}",
         "gatewayId": "{env:CLOUDFLARE_GATEWAY_ID}",
@@ -103,7 +104,7 @@ Environment variables always take precedence over values in `opencode.json`.
 }
 ```
 
-Model IDs follow the `ai-gateway-provider` unified convention, for example
+Model IDs use the unified format `provider/model`, for example
 `openai/gpt-4o` or `anthropic/claude-sonnet-4`. Any model ID supported by your
 Cloudflare AI Gateway configuration should work.
 

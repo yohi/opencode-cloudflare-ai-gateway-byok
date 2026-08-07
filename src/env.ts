@@ -81,9 +81,6 @@ export function stringOption(options: Record<string, unknown> | null | undefined
   const val = typeof options[key] === "string" ? (options[key] as string) : undefined
   if (!val) return undefined
 
-  const match = val.match(/^\{env:(.+)\}$/)
-  if (match && match[1]) {
-    return process.env[match[1]] || undefined
-  }
-  return val
+  const match = /^\{env:(.+)\}$/.exec(val)
+  return match?.[1] ? process.env[match[1]] || undefined : val
 }

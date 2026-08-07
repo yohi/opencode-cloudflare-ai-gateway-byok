@@ -10,7 +10,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
     if (ctx.catalog?.transform) {
       yield* ctx.catalog.transform(({ provider }) => {
         provider.update("cloudflare-ai-gateway-byok", (p) => {
-          if (p.api && p.api.type === "aisdk" && !p.api.url) {
+          if (p.api?.type === "aisdk" && !p.api.url) {
             p.api.url = "https://gateway.ai.cloudflare.com/v1/compat"
           }
         })
@@ -55,7 +55,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
               headers.delete("authorization")
               headers.delete("Authorization")
 
-              if (init && init.body && typeof init.body === "string") {
+              if (typeof init?.body === "string") {
                 try {
                   const parsed = JSON.parse(init.body)
                   cleanParams(parsed)
@@ -89,7 +89,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
     )
 
     yield* ctx.aisdk.language((evt) =>
-      Effect.gen(function* () {
+      Effect.sync(() => {
         if (evt.model.providerID !== "cloudflare-ai-gateway-byok") return
         if (!evt.sdk) return
 

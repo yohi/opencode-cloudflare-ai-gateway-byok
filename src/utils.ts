@@ -52,6 +52,21 @@ export function wrapModel(model: any) {
   })
 }
 
+async function extractBodyString(input: any, init?: any): Promise<string | undefined> {
+  if (typeof init?.body === "string") {
+    return init.body
+  }
+  if (typeof input === "object" && input !== null && typeof input.url === "string") {
+    try {
+      return await input.clone().text()
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      console.warn(`[CloudflareAIGatewayBYOK] Failed to clone/read request body: ${msg}`)
+    }
+  }
+  return undefined
+}
+
 export function patchGlobalFetch(): void {
   if ((globalThis as any).__byok_fetch_patched__) return
   ;(globalThis as any).__byok_fetch_patched__ = true
@@ -61,42 +76,32 @@ export function patchGlobalFetch(): void {
     async (input: any, init?: any) => {
       const isRequest = typeof input === "object" && input !== null && typeof input.url === "string"
       const urlStr = isRequest ? input.url : typeof input === "string" ? input : ""
-      if (urlStr.includes("gateway.ai.cloudflare.com")) {
-        const headers = new Headers(init?.headers ?? (isRequest ? input.headers : undefined))
-        headers.delete("authorization")
-        headers.delete("Authorization")
-
-        let bodyStr: string | undefined
-        if (typeof init?.body === "string") {
-          bodyStr = init.body
-        } else if (isRequest) {
-          try {
-            bodyStr = await input.clone().text()
-          } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
-            console.warn(`[CloudflareAIGatewayBYOK] Failed to clone/read request body: ${msg}`)
-          }
-        }
-
-        if (bodyStr) {
-          try {
-            const parsed = JSON.parse(bodyStr)
-            cleanParams(parsed)
-            return originalFetch(
-              new Request(input, {
-                ...init,
-                headers,
-                body: JSON.stringify(parsed),
-              })
-            )
-          } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
-            console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
-          }
-        }
-        return originalFetch(input, { ...init, headers })
+      if (!urlStr.includes("gateway.ai.cloudflare.com")) {
+        return originalFetch(input, init)
       }
-      return originalFetch(input, init)
+
+      const headers = new Headers(init?.headers ?? (isRequest ? input.headers : undefined))
+      headers.delete("authorization")
+      headers.delete("Authorization")
+
+      const bodyStr = await extractBodyString(input, init)
+      if (bodyStr) {
+        try {
+          const parsed = JSON.parse(bodyStr)
+          cleanParams(parsed)
+          return originalFetch(
+            new Request(input, {
+              ...init,
+              headers,
+              body: JSON.stringify(parsed),
+            })
+          )
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error)
+          console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
+        }
+      }
+      return originalFetch(input, { ...init, headers })
     },
     originalFetch,
   )

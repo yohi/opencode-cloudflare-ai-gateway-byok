@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.0...v1.1.0) (2026-08-07)
+
+
+### Features
+
+* プロンプトインジェクション対策を施したresolve-threadsスクリプトとテストの追加 ([975cd89](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/975cd89ea543112ee696d974030a51918d63578a))
+
 ## 1.0.0 (2026-08-06)
 
 

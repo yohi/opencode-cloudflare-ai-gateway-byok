@@ -152,13 +152,15 @@ describe("gatewayMetadata", () => {
 })
 
 describe("gatewayOptions", () => {
-  test("builds gateway options with metadata", () => {
+  test("builds gateway options with metadata and nested fallback", () => {
     const metadata = { session: "abc" }
     const options = {
-      cacheTtl: 60,
-      cacheKey: "key",
-      skipCache: true,
-      collectLog: false,
+      settings: {
+        cacheTtl: 60,
+        cacheKey: "key",
+        skipCache: true,
+        collectLog: false,
+      },
     }
 
     const result = gatewayOptions(options, metadata)
@@ -170,6 +172,27 @@ describe("gatewayOptions", () => {
     expect(result.collectLog).toBe(false)
   })
 })
+
+describe("patchGlobalFetch & utils", () => {
+  test("handles URL object inputs correctly", async () => {
+    let capturedUrl = ""
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      capturedUrl = input instanceof URL ? input.href : typeof input === "string" ? input : (input as Request).url
+      return new Response("ok")
+    }) as typeof fetch
+
+    const { patchGlobalFetch } = await import("../src/utils.js")
+    patchGlobalFetch()
+
+    const targetUrl = new URL("https://gateway.ai.cloudflare.com/v1/compat/chat/completions")
+    await globalThis.fetch(targetUrl)
+    expect(capturedUrl).toBe(targetUrl.href)
+
+    globalThis.fetch = originalFetch
+  })
+})
+
 
 const modelStub = {
   providerID: "cloudflare-ai-gateway-byok",

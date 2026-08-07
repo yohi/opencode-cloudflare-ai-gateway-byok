@@ -3,15 +3,17 @@ import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
 import { cleanParams, patchGlobalFetch, wrapModel } from "./utils.js"
 
-patchGlobalFetch()
+export const DEFAULT_BASE_URL = "https://gateway.ai.cloudflare.com/v1/compat"
 
 export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
   Effect.gen(function* () {
+    patchGlobalFetch()
+
     if (ctx.catalog?.transform) {
       yield* ctx.catalog.transform(({ provider }) => {
         provider.update("cloudflare-ai-gateway-byok", (p) => {
           if (p.api?.type === "aisdk" && !p.api.url) {
-            p.api.url = "https://gateway.ai.cloudflare.com/v1/compat"
+            p.api.url = DEFAULT_BASE_URL
           }
         })
       })
@@ -21,7 +23,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
       Effect.gen(function* () {
         if (evt.package !== "@yohi/cloudflare-ai-gateway-byok") return
         const customBaseURL = evt.options.baseURL
-        evt.options.baseURL = customBaseURL ?? "https://gateway.ai.cloudflare.com/v1/compat"
+        evt.options.baseURL = customBaseURL ?? DEFAULT_BASE_URL
 
         if (customBaseURL !== undefined) return
 
@@ -47,11 +49,12 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
           options,
         })
         const unified = createUnified({
-          baseURL: "https://gateway.ai.cloudflare.com/v1/compat",
+          baseURL: DEFAULT_BASE_URL,
           fetch: Object.assign(
-            (input: any, init?: any) => {
-              const isRequest = typeof input === "object" && input !== null && typeof input.url === "string"
-              const headers = new Headers(init?.headers ?? (isRequest ? input.headers : undefined))
+            (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+
+              const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
+              const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
               headers.delete("authorization")
               headers.delete("Authorization")
 
@@ -60,12 +63,13 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
                   const parsed = JSON.parse(init.body)
                   cleanParams(parsed)
                   return fetch(
-                    new Request(input, {
+                    new Request(input as any, {
                       ...init,
                       headers,
                       body: JSON.stringify(parsed),
                     })
                   )
+
                 } catch (e) {
                   console.warn("[CloudflareAIGatewayBYOK] Failed to parse request body JSON:", e)
                 }
@@ -99,3 +103,4 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
       })
     )
   })
+

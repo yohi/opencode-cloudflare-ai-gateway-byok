@@ -9,6 +9,13 @@ type GatewayConfig = {
 
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 
+function getEnvVar(name: string): string | undefined {
+  if (typeof process !== "undefined" && process.env) {
+    return process.env[name] || undefined
+  }
+  return undefined
+}
+
 export function gatewayConfig(options: Record<string, unknown> | null | undefined): GatewayConfig | undefined {
   if (!options || typeof options !== "object") return undefined
   const nested =
@@ -20,20 +27,20 @@ export function gatewayConfig(options: Record<string, unknown> | null | undefine
       : undefined)
 
   const accountId =
-    (process.env.CLOUDFLARE_ACCOUNT_ID || undefined) ??
+    getEnvVar("CLOUDFLARE_ACCOUNT_ID") ??
     stringOption(options, "accountId") ??
     stringOption(nested, "accountId")
 
   const gatewayId =
-    (process.env.CLOUDFLARE_GATEWAY_ID || undefined) ??
+    getEnvVar("CLOUDFLARE_GATEWAY_ID") ??
     stringOption(options, "gatewayId") ??
     stringOption(options, "gateway") ??
     stringOption(nested, "gatewayId") ??
     stringOption(nested, "gateway")
 
   const apiKey =
-    (process.env.CLOUDFLARE_API_TOKEN || undefined) ??
-    (process.env.CF_AIG_TOKEN || undefined) ??
+    getEnvVar("CLOUDFLARE_API_TOKEN") ??
+    getEnvVar("CF_AIG_TOKEN") ??
     stringOption(options, "apiKey") ??
     stringOption(nested, "apiKey")
 
@@ -67,12 +74,48 @@ export function gatewayOptions(
   if (!options || typeof options !== "object") {
     return { metadata }
   }
+  const nested =
+    (typeof options.settings === "object" && options.settings !== null
+      ? (options.settings as Record<string, unknown>)
+      : undefined) ??
+    (typeof options.options === "object" && options.options !== null
+      ? (options.options as Record<string, unknown>)
+      : undefined)
+
+  const cacheTtl =
+    typeof options.cacheTtl === "number"
+      ? options.cacheTtl
+      : typeof nested?.cacheTtl === "number"
+      ? nested.cacheTtl
+      : undefined
+
+  const cacheKey =
+    typeof options.cacheKey === "string"
+      ? options.cacheKey
+      : typeof nested?.cacheKey === "string"
+      ? nested.cacheKey
+      : undefined
+
+  const skipCache =
+    typeof options.skipCache === "boolean"
+      ? options.skipCache
+      : typeof nested?.skipCache === "boolean"
+      ? nested.skipCache
+      : undefined
+
+  const collectLog =
+    typeof options.collectLog === "boolean"
+      ? options.collectLog
+      : typeof nested?.collectLog === "boolean"
+      ? nested.collectLog
+      : undefined
+
   return {
     metadata,
-    cacheTtl: typeof options.cacheTtl === "number" ? options.cacheTtl : undefined,
-    cacheKey: typeof options.cacheKey === "string" ? options.cacheKey : undefined,
-    skipCache: typeof options.skipCache === "boolean" ? options.skipCache : undefined,
-    collectLog: typeof options.collectLog === "boolean" ? options.collectLog : undefined,
+    cacheTtl,
+    cacheKey,
+    skipCache,
+    collectLog,
   }
 }
 
@@ -82,5 +125,6 @@ export function stringOption(options: Record<string, unknown> | null | undefined
   if (!val) return undefined
 
   const match = /^\{env:(.+)\}$/.exec(val)
-  return match?.[1] ? process.env[match[1]] || undefined : val
+  return match?.[1] ? getEnvVar(match[1]) : val
 }
+

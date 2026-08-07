@@ -1,35 +1,33 @@
-export function cleanParams(obj: any): void {
+export function cleanParams(obj: unknown): void {
   if (!obj || typeof obj !== "object") return
   if (Array.isArray(obj)) {
     for (const item of obj) cleanParams(item)
     return
   }
-  if (Array.isArray(obj.tools) && obj.tools.length > 0) {
-    if (obj.tools.length > 128) {
-      obj.tools = obj.tools.slice(0, 128)
-    }
-    if (obj.reasoning_effort === undefined && obj.reasoningEffort === undefined) {
-      obj.reasoning_effort = "none"
+  const record = obj as Record<string, unknown>
+  if (Array.isArray(record.tools) && record.tools.length > 0) {
+    if (record.tools.length > 128) {
+      record.tools = record.tools.slice(0, 128)
     }
   }
-  if (obj.max_tokens !== undefined) {
-    obj.max_completion_tokens = obj.max_completion_tokens ?? obj.max_tokens
-    delete obj.max_tokens
+  if (record.max_tokens !== undefined) {
+    record.max_completion_tokens = record.max_completion_tokens ?? record.max_tokens
+    delete record.max_tokens
   }
-  if (obj.query && typeof obj.query === "object") {
-    cleanParams(obj.query)
+  if (record.query && typeof record.query === "object") {
+    cleanParams(record.query)
   }
 }
 
-export function wrapModel(model: any) {
+export function wrapModel<T>(model: T): T {
   if (!model || typeof model !== "object") return model
-  return new Proxy(model, {
-    get(target, prop, receiver) {
+  return new Proxy(model as object, {
+    get(target: Record<string | symbol, unknown>, prop: string | symbol, receiver: unknown) {
       if (prop === "doStream" || prop === "doGenerate") {
         if (typeof target[prop] !== "function") {
           return undefined
         }
-        return (options: any) => {
+        return (options: Record<string, unknown>) => {
           if (options) {
             const newOpts = { ...options }
             if (Array.isArray(newOpts.tools) && newOpts.tools.length > 128) {
@@ -44,21 +42,21 @@ export function wrapModel(model: any) {
             }
             options = newOpts
           }
-          return target[prop](options)
+          return (target[prop] as Function)(options)
         }
       }
       return Reflect.get(target, prop, receiver)
     },
-  })
+  }) as T
 }
 
-async function extractBodyString(input: any, init?: any): Promise<string | undefined> {
+async function extractBodyString(input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<string | undefined> {
   if (typeof init?.body === "string") {
     return init.body
   }
-  if (typeof input === "object" && input !== null && typeof input.url === "string") {
+  if (typeof input === "object" && input !== null && "url" in input && typeof input.url === "string" && typeof (input as Request).clone === "function") {
     try {
-      return await input.clone().text()
+      return await (input as Request).clone().text()
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       console.warn(`[CloudflareAIGatewayBYOK] Failed to clone/read request body: ${msg}`)
@@ -68,19 +66,26 @@ async function extractBodyString(input: any, init?: any): Promise<string | undef
 }
 
 export function patchGlobalFetch(): void {
-  if ((globalThis as any).__byok_fetch_patched__) return
-  ;(globalThis as any).__byok_fetch_patched__ = true
+  if ((globalThis as Record<string, unknown>).__byok_fetch_patched__) return
+  ;(globalThis as Record<string, unknown>).__byok_fetch_patched__ = true
   const originalFetch = globalThis.fetch
 
   globalThis.fetch = Object.assign(
-    async (input: any, init?: any) => {
-      const isRequest = typeof input === "object" && input !== null && typeof input.url === "string"
-      const urlStr = isRequest ? input.url : typeof input === "string" ? input : ""
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+
+      const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
+      const urlStr = isRequest
+        ? (input as Request).url
+        : typeof input === "string"
+        ? input
+        : input instanceof URL
+        ? input.href
+        : ""
       if (!urlStr.includes("gateway.ai.cloudflare.com")) {
         return originalFetch(input, init)
       }
 
-      const headers = new Headers(init?.headers ?? (isRequest ? input.headers : undefined))
+      const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
       headers.delete("authorization")
       headers.delete("Authorization")
 
@@ -90,12 +95,13 @@ export function patchGlobalFetch(): void {
           const parsed = JSON.parse(bodyStr)
           cleanParams(parsed)
           return originalFetch(
-            new Request(input, {
+            new Request(input as any, {
               ...init,
               headers,
               body: JSON.stringify(parsed),
             })
           )
+
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error)
           console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
@@ -106,3 +112,4 @@ export function patchGlobalFetch(): void {
     originalFetch,
   )
 }
+

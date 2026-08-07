@@ -110,12 +110,22 @@ Cloudflare AI Gateway configuration should work.
 ## BYOK behavior
 
 "Bring your own key" means this plugin never sends an OpenAI, Anthropic, or
-other provider secret to OpenCode. Those keys are configured once in the
-Cloudflare AI Gateway dashboard. The plugin only sends:
+other provider secret from this machine. Those keys are configured once in the
+Cloudflare AI Gateway dashboard. The plugin sends authentication and LLM request
+data to Cloudflare AI Gateway, which then injects the correct upstream provider
+key on the server side.
 
+Provider secrets are **not** sent, but the following data is transmitted from the
+plugin to the Gateway:
+
+**Authentication (sent):**
 - Your Cloudflare account ID.
 - Your gateway ID.
 - A Cloudflare-scoped gateway or API token.
+
+**LLM request data (sent):**
+- Model IDs, prompts, streaming responses, etc.
+- Forwarded to the upstream provider via the Gateway.
 
 Cloudflare AI Gateway then injects the correct upstream provider key on the
 server side.

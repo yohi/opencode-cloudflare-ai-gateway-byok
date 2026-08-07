@@ -89,11 +89,18 @@ bun add @yohi/cloudflare-ai-gateway-byok
 
 ## BYOK の仕組み
 
-「Bring Your Own Key (BYOK)」とは、このプラグインが OpenAI や Anthropic などの各プロバイダーのシークレットキーを OpenCode に送信しないことを意味します。これらのキーは Cloudflare AI Gateway ダッシュボード側であらかじめ設定しておきます。プラグインが送信するのは以下の情報のみです。
+「Bring Your Own Key (BYOK)」とは、このプラグインが OpenAI や Anthropic などの各プロバイダーのシークレットキーをローカルから送信しないことを意味します。これらのキーは Cloudflare AI Gateway ダッシュボード側であらかじめ設定しておきます。プラグインは認証情報と LLM リクエストデータを Cloudflare AI Gateway に送信し、Gateway がサーバー側で正しいアップストリームプロバイダーキーを挿入してリクエストを行います。
 
+プロバイダーのシークレットキーは送信**されません**が、プラグインから Gateway へは次のデータが送信されます。
+
+**認証情報（送信される）:**
 - Cloudflare アカウント ID
 - ゲートウェイ ID
 - Cloudflare スコープのゲートウェイトークンまたは API トークン
+
+**LLM リクエストデータ（送信される）:**
+- モデル ID、プロンプト、ストリーミングレスポンスなど
+- Gateway 経由でアップストリームプロバイダーへ転送されます
 
 Cloudflare AI Gateway がサーバー側で正しいアップストリームプロバイダーキーを挿入してリクエストを行います。
 

@@ -168,7 +168,6 @@ describe("gatewayOptions", () => {
     expect(result.cacheKey).toBe("key")
     expect(result.skipCache).toBe(true)
     expect(result.collectLog).toBe(false)
-    expect((result.headers as Record<string, string>)["User-Agent"]).toContain("opencode cloudflare-ai-gateway-byok")
   })
 })
 

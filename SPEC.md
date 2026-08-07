@@ -128,7 +128,7 @@ export default define({
    - Matches when `evt.package === "ai-gateway-provider"` and `evt.options.baseURL` is not set.
    - Resolves credentials via `gatewayConfig(evt.options)`.
    - Dynamically imports `ai-gateway-provider` and initializes `createAiGateway`.
-   - Sets `User-Agent` header to `opencode cloudflare-ai-gateway-byok (${os.platform()} ${os.release()}; ${os.arch()})`.
+   - Options are resolved via `gatewayOptions(evt.options, metadata)`, which returns a value conforming to the official `AiGatewayOptions` type from `ai-gateway-provider`.
 
 2. **Language Hook (`ctx.aisdk.language`)**:
    - Matches when `evt.model.providerID === "cloudflare-ai-gateway-byok"` and `evt.sdk` is present.

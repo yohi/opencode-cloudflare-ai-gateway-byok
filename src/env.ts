@@ -1,4 +1,3 @@
-import os from "node:os"
 import { Option, Schema } from "effect"
 import type { AiGatewayOptions } from "ai-gateway-provider"
 
@@ -38,22 +37,18 @@ export function gatewayMetadata(options: Record<string, unknown>): AiGatewayOpti
     : undefined
 }
 
-export type ExtendedAiGatewayOptions = AiGatewayOptions & { headers?: Record<string, string> }
 
 export function gatewayOptions(
   options: Record<string, unknown>,
-  metadata: AiGatewayOptions["metadata"]
-): ExtendedAiGatewayOptions {
-return {
-metadata,
-cacheTtl: typeof options.cacheTtl === "number" ? options.cacheTtl : undefined,
-cacheKey: typeof options.cacheKey === "string" ? options.cacheKey : undefined,
-skipCache: typeof options.skipCache === "boolean" ? options.skipCache : undefined,
-collectLog: typeof options.collectLog === "boolean" ? options.collectLog : undefined,
-headers: {
-"User-Agent": `opencode cloudflare-ai-gateway-byok (${os.platform()} ${os.release()}; ${os.arch()})`,
-},
-}
+  metadata: AiGatewayOptions["metadata"],
+): AiGatewayOptions {
+  return {
+    metadata,
+    cacheTtl: typeof options.cacheTtl === "number" ? options.cacheTtl : undefined,
+    cacheKey: typeof options.cacheKey === "string" ? options.cacheKey : undefined,
+    skipCache: typeof options.skipCache === "boolean" ? options.skipCache : undefined,
+    collectLog: typeof options.collectLog === "boolean" ? options.collectLog : undefined,
+  }
 }
 
 export function stringOption(options: Record<string, unknown>, key: string): string | undefined {

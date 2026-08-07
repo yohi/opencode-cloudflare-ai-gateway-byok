@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { gatewayConfig, gatewayMetadata, gatewayOptions, type ExtendedAiGatewayOptions } from "./env.js"
+import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
 
 export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
@@ -14,7 +14,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
 
         const { accountId, gatewayId, apiKey } = config
         const metadata = gatewayMetadata(evt.options)
-        const options: ExtendedAiGatewayOptions = gatewayOptions(evt.options, metadata)
+        const options = gatewayOptions(evt.options, metadata)
 
         const { createAiGateway } = yield* Effect.promise(
           () => import("ai-gateway-provider")

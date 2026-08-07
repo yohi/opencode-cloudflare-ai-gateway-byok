@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
-import { cleanParams, patchGlobalFetch, wrapModel } from "./utils.js"
+import { patchGlobalFetch, wrapModel } from "./utils.js"
 
 export const DEFAULT_BASE_URL = "https://gateway.ai.cloudflare.com/v1/compat"
 
@@ -50,34 +50,6 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
         })
         const unified = createUnified({
           baseURL: DEFAULT_BASE_URL,
-          fetch: Object.assign(
-            (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-
-              const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
-              const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
-              headers.delete("authorization")
-              headers.delete("Authorization")
-
-              if (typeof init?.body === "string") {
-                try {
-                  const parsed = JSON.parse(init.body)
-                  cleanParams(parsed)
-                  return fetch(
-                    new Request(input as any, {
-                      ...init,
-                      headers,
-                      body: JSON.stringify(parsed),
-                    })
-                  )
-
-                } catch (e) {
-                  console.warn("[CloudflareAIGatewayBYOK] Failed to parse request body JSON:", e)
-                }
-              }
-              return fetch(input, { ...init, headers })
-            },
-            fetch,
-          ),
         })
 
         evt.sdk = Object.assign(
@@ -99,6 +71,11 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
 
         if (typeof evt.sdk.languageModel === "function") {
           evt.language = evt.sdk.languageModel(evt.model.api.id)
+        } else {
+          console.warn(
+            "[CloudflareAIGatewayBYOK] Expected sdk.languageModel to be a function, but got:",
+            typeof evt.sdk.languageModel
+          )
         }
       })
     )

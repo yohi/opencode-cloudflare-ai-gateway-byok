@@ -16,15 +16,23 @@ function getEnvVar(name: string): string | undefined {
   return undefined
 }
 
-export function gatewayConfig(options: Record<string, unknown> | null | undefined): GatewayConfig | undefined {
+export function getNestedOptions(
+  options: Record<string, unknown> | null | undefined
+): Record<string, unknown> | undefined {
   if (!options || typeof options !== "object") return undefined
-  const nested =
+  return (
     (typeof options.settings === "object" && options.settings !== null
       ? (options.settings as Record<string, unknown>)
       : undefined) ??
     (typeof options.options === "object" && options.options !== null
       ? (options.options as Record<string, unknown>)
       : undefined)
+  )
+}
+
+export function gatewayConfig(options: Record<string, unknown> | null | undefined): GatewayConfig | undefined {
+  if (!options || typeof options !== "object") return undefined
+  const nested = getNestedOptions(options)
 
   const accountId =
     getEnvVar("CLOUDFLARE_ACCOUNT_ID") ??
@@ -74,13 +82,7 @@ export function gatewayOptions(
   if (!options || typeof options !== "object") {
     return { metadata }
   }
-  const nested =
-    (typeof options.settings === "object" && options.settings !== null
-      ? (options.settings as Record<string, unknown>)
-      : undefined) ??
-    (typeof options.options === "object" && options.options !== null
-      ? (options.options as Record<string, unknown>)
-      : undefined)
+  const nested = getNestedOptions(options)
 
   const cacheTtl =
     typeof options.cacheTtl === "number"

@@ -74,5 +74,12 @@ export function gatewayOptions(
 }
 
 export function stringOption(options: Record<string, unknown>, key: string): string | undefined {
-  return typeof options[key] === "string" ? (options[key] as string) : undefined
+  const val = typeof options[key] === "string" ? (options[key] as string) : undefined
+  if (!val) return undefined
+
+  const match = val.match(/^\{env:(.+)\}$/)
+  if (match && match[1]) {
+    return process.env[match[1]]
+  }
+  return val
 }

@@ -37,9 +37,10 @@ export function gatewayMetadata(options: Record<string, unknown>): AiGatewayOpti
     : undefined
 }
 
+
 export function gatewayOptions(
   options: Record<string, unknown>,
-  metadata: AiGatewayOptions["metadata"]
+  metadata: AiGatewayOptions["metadata"],
 ): AiGatewayOptions {
   return {
     metadata,

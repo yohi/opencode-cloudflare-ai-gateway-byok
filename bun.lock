@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@opencode-ai/cloudflare-ai-gateway-byok",
+      "name": "@yohi/cloudflare-ai-gateway-byok",
       "dependencies": {
         "ai-gateway-provider": "^3.1.2",
       },

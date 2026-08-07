@@ -331,7 +331,7 @@ describe("CloudflareAIGatewayBYOK", () => {
     const result = ctx.runLanguage(evt)
     if (result) await Effect.runPromise(result)
 
-    expect(evt.language).toEqual({ gatewayModel: { unifiedModel: "test-model" } })
+    expect(evt.language as any).toEqual({ gatewayModel: { unifiedModel: "test-model" } })
   })
 
   test("metadata cache log pass through to createAiGateway", async () => {

@@ -29,18 +29,28 @@ if (!(globalThis as any).__byok_fetch_patched__) {
 
   globalThis.fetch = Object.assign(
     async (input: any, init?: any) => {
-      const urlStr = typeof input === "string" ? input : input?.url ?? ""
+      const isRequest = typeof input === "object" && input !== null && typeof input.url === "string"
+      const urlStr = isRequest ? input.url : typeof input === "string" ? input : ""
       if (urlStr.includes("gateway.ai.cloudflare.com")) {
-        const headers = new Headers(init?.headers)
+        const headers = new Headers(init?.headers ?? (isRequest ? input.headers : undefined))
         headers.delete("authorization")
         headers.delete("Authorization")
 
-        if (init && init.body && typeof init.body === "string") {
+        let bodyStr: string | undefined
+        if (typeof init?.body === "string") {
+          bodyStr = init.body
+        } else if (isRequest) {
           try {
-            const parsed = JSON.parse(init.body)
+            bodyStr = await input.clone().text()
+          } catch (e) {}
+        }
+
+        if (bodyStr) {
+          try {
+            const parsed = JSON.parse(bodyStr)
             cleanParams(parsed)
             return originalFetch(
-              new Request(input as string, {
+              new Request(input, {
                 ...init,
                 headers,
                 body: JSON.stringify(parsed),
@@ -105,7 +115,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
               headers.delete("authorization")
               headers.delete("Authorization")
 
-              if (init && init.body && typeof init.body === "string") {
+                if (init && init.body && typeof init.body === "string") {
                 try {
                   const parsed = JSON.parse(init.body)
                   if (Array.isArray(parsed.tools) && parsed.tools.length > 128) {
@@ -115,9 +125,8 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
                     parsed.max_completion_tokens = parsed.max_completion_tokens ?? parsed.max_tokens
                     delete parsed.max_tokens
                   }
-                  console.error("[DEBUG-POST-BODY-KEYS]", Object.keys(parsed), "max_tokens:", parsed.max_tokens, "max_completion_tokens:", parsed.max_completion_tokens)
                   return fetch(
-                    new Request(input as string, {
+                    new Request(input, {
                       ...init,
                       headers,
                       body: JSON.stringify(parsed),
@@ -158,12 +167,15 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
           })
         }
 
-        evt.sdk = {
-          ...gateway,
-          languageModel(modelID: string) {
-            return wrapModel(gateway(unified(modelID)))
-          },
-        }
+        evt.sdk = Object.assign(
+          (modelID: string) => wrapModel(gateway(unified(modelID))),
+          gateway,
+          {
+            languageModel(modelID: string) {
+              return wrapModel(gateway(unified(modelID)))
+            },
+          }
+        )
       })
     )
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.3...v1.0.4) (2026-08-08)
+
+
+### 🐛 Bug Fixes
+
+* **ci:** use bun for setup and build in release workflow ([#18](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/issues/18)) ([b20d9be](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/b20d9beb923f4dcabf245b89b1c3e2e57c1c08f9))
+
 ## [1.0.3](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.2...v1.0.3) (2026-08-08)
 
 

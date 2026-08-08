@@ -5,8 +5,13 @@ export function cleanParams(obj: unknown): void {
     return
   }
   const record = obj as Record<string, unknown>
-  if (Array.isArray(record.tools) && record.tools.length > 128) {
-    record.tools = record.tools.slice(0, 128)
+  if (Array.isArray(record.tools) && record.tools.length > 0) {
+    if (record.tools.length > 128) {
+      record.tools = record.tools.slice(0, 128)
+    }
+    if (record.reasoning_effort !== undefined) {
+      record.reasoning_effort = "none"
+    }
   }
   if (record.max_tokens !== undefined) {
     record.max_completion_tokens = record.max_completion_tokens ?? record.max_tokens
@@ -28,16 +33,21 @@ export function wrapModel<T>(model: T): T {
         return (options: Record<string, unknown>) => {
           if (options) {
             const newOpts = { ...options }
-            if (Array.isArray(newOpts.tools) && newOpts.tools.length > 128) {
-              newOpts.tools = newOpts.tools.slice(0, 128)
+            if (newOpts.reasoningEffort !== undefined) {
+              newOpts.reasoning_effort = newOpts.reasoningEffort
+              delete newOpts.reasoningEffort
+            }
+            if (Array.isArray(newOpts.tools) && newOpts.tools.length > 0) {
+              if (newOpts.tools.length > 128) {
+                newOpts.tools = newOpts.tools.slice(0, 128)
+              }
+              if (newOpts.reasoning_effort !== undefined) {
+                newOpts.reasoning_effort = "none"
+              }
             }
             if (newOpts.maxTokens !== undefined) {
               newOpts.maxOutputTokens = newOpts.maxOutputTokens ?? newOpts.maxTokens
               delete newOpts.maxTokens
-            }
-            if (newOpts.reasoningEffort !== undefined) {
-              newOpts.reasoning_effort = newOpts.reasoningEffort
-              delete newOpts.reasoningEffort
             }
             options = newOpts
           }

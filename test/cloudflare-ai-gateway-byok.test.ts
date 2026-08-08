@@ -248,7 +248,8 @@ describe("patchGlobalFetch & utils", () => {
     const wrapped = wrapModel(mockModel)
     wrapped.doGenerate({ tools: [{ type: "function" }], reasoningEffort: "medium" })
 
-    expect(receivedOptions?.reasoningEffort).toBe("none")
+    expect(receivedOptions?.reasoningEffort).toBeUndefined()
+    expect(receivedOptions?.reasoning_effort).toBe("none")
   })
 
   test("cleanParams sets reasoning_effort to 'none' when tools are present", async () => {

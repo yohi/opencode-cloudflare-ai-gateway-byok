@@ -33,19 +33,17 @@ export function wrapModel<T>(model: T): T {
         return (options: Record<string, unknown>) => {
           if (options) {
             const newOpts = { ...options }
+            if (newOpts.reasoningEffort !== undefined) {
+              newOpts.reasoning_effort = newOpts.reasoningEffort
+              delete newOpts.reasoningEffort
+            }
             if (Array.isArray(newOpts.tools) && newOpts.tools.length > 0) {
               if (newOpts.tools.length > 128) {
                 newOpts.tools = newOpts.tools.slice(0, 128)
               }
-              if (newOpts.reasoningEffort !== undefined) {
-                newOpts.reasoningEffort = "none"
-              }
               if (newOpts.reasoning_effort !== undefined) {
                 newOpts.reasoning_effort = "none"
               }
-            } else if (newOpts.reasoningEffort !== undefined) {
-              newOpts.reasoning_effort = newOpts.reasoningEffort
-              delete newOpts.reasoningEffort
             }
             if (newOpts.maxTokens !== undefined) {
               newOpts.maxOutputTokens = newOpts.maxOutputTokens ?? newOpts.maxTokens

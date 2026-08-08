@@ -235,6 +235,31 @@ describe("patchGlobalFetch & utils", () => {
     expect(receivedOptions?.maxOutputTokens).toBe(100)
     expect(receivedOptions?.maxTokens).toBeUndefined()
   })
+
+  test("wrapModel overrides reasoningEffort to 'none' when tools are present", async () => {
+    const { wrapModel } = await import("../src/utils.js")
+    let receivedOptions: Record<string, unknown> | undefined
+    const mockModel = {
+      doGenerate: (opts: Record<string, unknown>) => {
+        receivedOptions = opts
+      },
+    }
+
+    const wrapped = wrapModel(mockModel)
+    wrapped.doGenerate({ tools: [{ type: "function" }], reasoningEffort: "medium" })
+
+    expect(receivedOptions?.reasoningEffort).toBe("none")
+  })
+
+  test("cleanParams sets reasoning_effort to 'none' when tools are present", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body = {
+      tools: [{ type: "function" }],
+      reasoning_effort: "high",
+    }
+    cleanParams(body)
+    expect(body.reasoning_effort).toBe("none")
+  })
 })
 
 

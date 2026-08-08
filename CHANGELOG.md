@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.3](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.2...v1.0.3) (2026-08-08)
+
+
+### 🐛 Bug Fixes
+
+* **utils:** set reasoning_effort to none when function tools are present ([90b734b](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/90b734b5caf3eb628dfdfacaeb0cf150eed7aa76))
+* **utils:** set reasoning_effort to none when tools are present ([c082a61](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/c082a610f7fbf54c80293072ef72d8956e3e403c))
+
+
+### ♻️ Refactors
+
+* **utils:** normalize reasoningEffort to reasoning_effort before evaluating tools ([86a0c46](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/86a0c46940f50b1b393872e6490b646179605880))
+
 ## [1.0.2](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.1...v1.0.2) (2026-08-07)
 
 

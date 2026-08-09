@@ -5,20 +5,33 @@ export function cleanParams(obj: unknown): void {
     return
   }
   const record = obj as Record<string, unknown>
+
+  if (record.reasoningEffort !== undefined) {
+    record.reasoning_effort = record.reasoningEffort
+    delete record.reasoningEffort
+  }
+
   if (Array.isArray(record.tools) && record.tools.length > 0) {
     if (record.tools.length > 128) {
       record.tools = record.tools.slice(0, 128)
     }
-    if (record.reasoning_effort !== undefined) {
-      record.reasoning_effort = "none"
-    }
+    record.reasoning_effort = "none"
+    delete record.reasoningEffort
   }
-  if (record.max_tokens !== undefined) {
-    record.max_completion_tokens = record.max_completion_tokens ?? record.max_tokens
+
+  if (record.maxTokens !== undefined || record.max_tokens !== undefined || record.maxOutputTokens !== undefined) {
+    const val = record.maxTokens ?? record.max_tokens ?? record.maxOutputTokens
+    record.max_completion_tokens = record.max_completion_tokens ?? val
+    delete record.maxTokens
     delete record.max_tokens
+    delete record.maxOutputTokens
   }
-  if (record.query && typeof record.query === "object") {
-    cleanParams(record.query)
+
+  for (const key of Object.keys(record)) {
+    if (key === "maxTokens" || key === "max_tokens" || key === "maxOutputTokens") continue
+    if (record[key] && typeof record[key] === "object") {
+      cleanParams(record[key])
+    }
   }
 }
 
@@ -26,35 +39,19 @@ export function wrapModel<T>(model: T): T {
   if (!model || typeof model !== "object") return model
   return new Proxy(model as object, {
     get(target: Record<string | symbol, unknown>, prop: string | symbol, receiver: unknown) {
+      const value = Reflect.get(target, prop, receiver)
       if (prop === "doStream" || prop === "doGenerate") {
-        if (typeof target[prop] !== "function") {
+        if (typeof value !== "function") {
           return undefined
         }
-        return (options: Record<string, unknown>) => {
-          if (options) {
-            const newOpts = { ...options }
-            if (newOpts.reasoningEffort !== undefined) {
-              newOpts.reasoning_effort = newOpts.reasoningEffort
-              delete newOpts.reasoningEffort
-            }
-            if (Array.isArray(newOpts.tools) && newOpts.tools.length > 0) {
-              if (newOpts.tools.length > 128) {
-                newOpts.tools = newOpts.tools.slice(0, 128)
-              }
-              if (newOpts.reasoning_effort !== undefined) {
-                newOpts.reasoning_effort = "none"
-              }
-            }
-            if (newOpts.maxTokens !== undefined) {
-              newOpts.maxOutputTokens = newOpts.maxOutputTokens ?? newOpts.maxTokens
-              delete newOpts.maxTokens
-            }
-            options = newOpts
+        return (options: Record<string, unknown>, ...args: unknown[]) => {
+          if (options && typeof options === "object") {
+            cleanParams(options)
           }
-          return (target[prop] as Function)(options)
+          return (value as Function).call(target, options, ...args)
         }
       }
-      return Reflect.get(target, prop, receiver)
+      return value
     },
   }) as T
 }
@@ -98,19 +95,27 @@ export function patchGlobalFetch(): void {
         // invalid URL or empty
       }
 
-      if (hostname !== "gateway.ai.cloudflare.com") {
-        return originalFetch(input, init)
-      }
-
-      const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
-      headers.delete("authorization")
-      headers.delete("Authorization")
-
       const bodyStr = await extractBodyString(input, init)
       if (bodyStr) {
         try {
           const parsed = JSON.parse(bodyStr)
           cleanParams(parsed)
+
+          const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
+          if (hostname === "gateway.ai.cloudflare.com") {
+            headers.delete("authorization")
+            headers.delete("Authorization")
+          }
+
+          if (isRequest) {
+            return originalFetch(
+              new Request(input as Request, {
+                headers,
+                body: JSON.stringify(parsed),
+              })
+            )
+          }
+
           return originalFetch(
             new Request(urlStr, {
               ...init,
@@ -124,7 +129,15 @@ export function patchGlobalFetch(): void {
           console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
         }
       }
-      return originalFetch(input, { ...init, headers })
+
+      if (hostname === "gateway.ai.cloudflare.com") {
+        const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
+        headers.delete("authorization")
+        headers.delete("Authorization")
+        return originalFetch(input, { ...init, headers })
+      }
+
+      return originalFetch(input, init)
     },
     originalFetch,
   )

@@ -220,7 +220,38 @@ describe("patchGlobalFetch & utils", () => {
     delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
   })
 
-  test("wrapModel transforms maxTokens to maxOutputTokens", async () => {
+  test("patchGlobalFetch sanitizes body JSON removing max_tokens", async () => {
+    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+    let capturedBody: string | undefined
+    const originalFetch = globalThis.fetch
+    const mockFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (input instanceof Request) {
+        capturedBody = await input.text()
+      } else {
+        capturedBody = typeof init?.body === "string" ? init.body : undefined
+      }
+      return new Response("ok")
+    }) as typeof fetch
+    globalThis.fetch = mockFetch
+
+    const { patchGlobalFetch } = await import("../src/utils.js")
+    patchGlobalFetch()
+
+    await globalThis.fetch("https://gateway.ai.cloudflare.com/v1/compat/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ max_tokens: 300, model: "gpt-5.6-sol" }),
+    })
+
+    expect(capturedBody).toBeDefined()
+    const parsed = JSON.parse(capturedBody!)
+    expect(parsed.max_tokens).toBeUndefined()
+    expect(parsed.max_completion_tokens).toBe(300)
+
+    globalThis.fetch = originalFetch
+    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+  })
+
+  test("wrapModel transforms maxTokens to max_completion_tokens and deletes maxTokens", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -232,11 +263,36 @@ describe("patchGlobalFetch & utils", () => {
     const wrapped = wrapModel(mockModel)
     wrapped.doGenerate({ maxTokens: 100 })
 
-    expect(receivedOptions?.maxOutputTokens).toBe(100)
+    expect(receivedOptions?.max_completion_tokens).toBe(100)
     expect(receivedOptions?.maxTokens).toBeUndefined()
+    expect(receivedOptions?.maxOutputTokens).toBeUndefined()
   })
 
-  test("wrapModel overrides reasoningEffort to 'none' when tools are present", async () => {
+  test("cleanParams converts reasoningEffort to reasoning_effort = 'none' when tools are present", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body: Record<string, unknown> = {
+      tools: [{ type: "function" }],
+      reasoningEffort: "high",
+    }
+    cleanParams(body)
+    expect(body.reasoningEffort).toBeUndefined()
+    expect(body.reasoning_effort).toBe("none")
+  })
+
+  test("cleanParams handles nested objects recursively for tools and sets reasoning_effort = 'none'", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body: Record<string, Record<string, unknown>> = {
+      nested: {
+        tools: [{ type: "function" }],
+        reasoningEffort: "medium",
+      },
+    }
+    cleanParams(body)
+    expect(body.nested.reasoningEffort).toBeUndefined()
+    expect(body.nested.reasoning_effort).toBe("none")
+  })
+
+  test("wrapModel sets reasoning_effort = 'none' when tools are present", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -252,15 +308,44 @@ describe("patchGlobalFetch & utils", () => {
     expect(receivedOptions?.reasoning_effort).toBe("none")
   })
 
-  test("cleanParams sets reasoning_effort to 'none' when tools are present", async () => {
+  test("cleanParams converts max_tokens to max_completion_tokens, deleting max_tokens and maxOutputTokens", async () => {
     const { cleanParams } = await import("../src/utils.js")
-    const body = {
-      tools: [{ type: "function" }],
-      reasoning_effort: "high",
+    const body: Record<string, unknown> = {
+      max_tokens: 150,
+      model: "gpt-4o",
     }
     cleanParams(body)
-    expect(body.reasoning_effort).toBe("none")
+    expect(body.max_tokens).toBeUndefined()
+    expect(body.maxOutputTokens).toBeUndefined()
+    expect(body.max_completion_tokens).toBe(150)
   })
+
+  test("cleanParams converts maxTokens / maxOutputTokens to max_completion_tokens and deletes originals", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body: Record<string, unknown> = {
+      maxTokens: 200,
+      maxOutputTokens: 200,
+    }
+    cleanParams(body)
+    expect(body.maxTokens).toBeUndefined()
+    expect(body.maxOutputTokens).toBeUndefined()
+    expect(body.max_completion_tokens).toBe(200)
+  })
+
+  test("cleanParams handles nested max_tokens removal recursively", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body: Record<string, Record<string, unknown>> = {
+      options: {
+        max_tokens: 500,
+      },
+    }
+    cleanParams(body)
+    expect(body.options.max_tokens).toBeUndefined()
+    expect(body.options.maxOutputTokens).toBeUndefined()
+    expect(body.options.max_completion_tokens).toBe(500)
+  })
+
+
 })
 
 

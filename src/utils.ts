@@ -1,18 +1,26 @@
+function sanitizeOpenAIReasoningEffort(record: Record<string, unknown>): void {
+  if (record.reasoningEffort !== undefined) {
+    record.reasoning_effort = record.reasoningEffort
+    delete record.reasoningEffort
+  }
+  if (Array.isArray(record.tools) && record.tools.length > 0) {
+    if (record.tools.length > 128) {
+      record.tools = record.tools.slice(0, 128)
+    }
+    record.reasoning_effort = "none"
+  }
+}
+
+function sanitizeNonOpenAIReasoningEffort(record: Record<string, unknown>): void {
+  delete record.reasoning_effort
+  delete record.reasoningEffort
+}
+
 function sanitizeReasoningEffort(record: Record<string, unknown>, isOpenAI: boolean): void {
   if (isOpenAI) {
-    if (record.reasoningEffort !== undefined) {
-      record.reasoning_effort = record.reasoningEffort
-      delete record.reasoningEffort
-    }
-    if (Array.isArray(record.tools) && record.tools.length > 0) {
-      if (record.tools.length > 128) {
-        record.tools = record.tools.slice(0, 128)
-      }
-      record.reasoning_effort = "none"
-    }
+    sanitizeOpenAIReasoningEffort(record)
   } else {
-    delete record.reasoning_effort
-    delete record.reasoningEffort
+    sanitizeNonOpenAIReasoningEffort(record)
   }
 }
 
@@ -73,6 +81,11 @@ export function wrapModel<T>(model: T): T {
 }
 
 async function extractBodyString(input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<string | undefined> {
+  const method = (init?.method ?? (typeof input === "object" && input !== null && "method" in input ? (input as Request).method : "GET")).toUpperCase()
+  if (method === "GET" || method === "HEAD") {
+    return undefined
+  }
+
   if (typeof init?.body === "string") {
     return init.body
   }
@@ -114,7 +127,13 @@ function processFetchRequest(
     )
   }
 
-  const urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : ""
+  let urlStr = ""
+  if (typeof input === "string") {
+    urlStr = input
+  } else if (input instanceof URL) {
+    urlStr = input.href
+  }
+
   return originalFetch(
     new Request(urlStr, {
       ...init,
@@ -129,6 +148,19 @@ declare global {
   var __byok_fetch_patched__: boolean | undefined
 }
 
+function resolveUrlString(input: Parameters<typeof fetch>[0], isRequest: boolean): string {
+  if (isRequest) {
+    return (input as Request).url
+  }
+  if (typeof input === "string") {
+    return input
+  }
+  if (input instanceof URL) {
+    return input.href
+  }
+  return ""
+}
+
 export function patchGlobalFetch(): void {
   if (globalThis.__byok_fetch_patched__) return
   globalThis.__byok_fetch_patched__ = true
@@ -137,13 +169,7 @@ export function patchGlobalFetch(): void {
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
-      const urlStr = isRequest
-        ? (input as Request).url
-        : typeof input === "string"
-        ? input
-        : input instanceof URL
-        ? input.href
-        : ""
+      const urlStr = resolveUrlString(input, isRequest)
 
       let hostname = ""
       try {

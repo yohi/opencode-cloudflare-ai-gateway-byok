@@ -1,14 +1,4 @@
-export function cleanParams(obj: unknown): void {
-  if (!obj || typeof obj !== "object") return
-  if (Array.isArray(obj)) {
-    for (const item of obj) cleanParams(item)
-    return
-  }
-  const record = obj as Record<string, unknown>
-
-  const modelName = typeof record.model === "string" ? record.model.toLowerCase() : ""
-  const isOpenAI = modelName.includes("openai") || modelName.includes("gpt") || modelName.startsWith("o1") || modelName.startsWith("o3")
-
+function sanitizeReasoningEffort(record: Record<string, unknown>, isOpenAI: boolean): void {
   if (isOpenAI) {
     if (record.reasoningEffort !== undefined) {
       record.reasoning_effort = record.reasoningEffort
@@ -21,18 +11,39 @@ export function cleanParams(obj: unknown): void {
       record.reasoning_effort = "none"
     }
   } else {
-    // Gemini/Google, Anthropic and other non-OpenAI models do NOT support reasoning_effort/reasoningEffort
     delete record.reasoning_effort
     delete record.reasoningEffort
   }
+}
 
-  if (record.maxTokens !== undefined || record.max_tokens !== undefined || record.maxOutputTokens !== undefined || record.max_completion_tokens !== undefined) {
+function sanitizeMaxTokens(record: Record<string, unknown>): void {
+  if (
+    record.maxTokens !== undefined ||
+    record.max_tokens !== undefined ||
+    record.maxOutputTokens !== undefined ||
+    record.max_completion_tokens !== undefined
+  ) {
     const val = record.maxTokens ?? record.max_tokens ?? record.maxOutputTokens ?? record.max_completion_tokens
     record.max_completion_tokens = val
     delete record.maxTokens
     delete record.max_tokens
     delete record.maxOutputTokens
   }
+}
+
+export function cleanParams(obj: unknown): void {
+  if (!obj || typeof obj !== "object") return
+  if (Array.isArray(obj)) {
+    for (const item of obj) cleanParams(item)
+    return
+  }
+  const record = obj as Record<string, unknown>
+
+  const modelName = typeof record.model === "string" ? record.model.toLowerCase() : ""
+  const isOpenAI = modelName.includes("openai") || modelName.includes("gpt") || modelName.startsWith("o1") || modelName.startsWith("o3")
+
+  sanitizeReasoningEffort(record, isOpenAI)
+  sanitizeMaxTokens(record)
 
   for (const key of Object.keys(record)) {
     if (key === "maxTokens" || key === "max_tokens" || key === "maxOutputTokens") continue
@@ -79,6 +90,43 @@ async function extractBodyString(input: Parameters<typeof fetch>[0], init?: Requ
   return undefined
 }
 
+function cleanHeaders(headers: Headers, hostname: string): void {
+  if (hostname === "gateway.ai.cloudflare.com") {
+    headers.delete("authorization")
+    headers.delete("Authorization")
+  }
+}
+
+function processFetchRequest(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit | undefined,
+  hostname: string,
+  isRequest: boolean,
+  parsed: unknown,
+  originalFetch: typeof fetch
+): Promise<Response> {
+  const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
+  cleanHeaders(headers, hostname)
+
+  if (isRequest) {
+    return originalFetch(
+      new Request(input as Request, {
+        headers,
+        body: JSON.stringify(parsed),
+      })
+    )
+  }
+
+  const urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : ""
+  return originalFetch(
+    new Request(urlStr, {
+      ...init,
+      headers,
+      body: JSON.stringify(parsed),
+    })
+  )
+}
+
 export function patchGlobalFetch(): void {
   if ((globalThis as Record<string, unknown>).__byok_fetch_patched__) return
   ;(globalThis as Record<string, unknown>).__byok_fetch_patched__ = true
@@ -86,7 +134,6 @@ export function patchGlobalFetch(): void {
 
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-
       const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
       const urlStr = isRequest
         ? (input as Request).url
@@ -108,30 +155,7 @@ export function patchGlobalFetch(): void {
         try {
           const parsed = JSON.parse(bodyStr)
           cleanParams(parsed)
-
-          const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
-          if (hostname === "gateway.ai.cloudflare.com") {
-            headers.delete("authorization")
-            headers.delete("Authorization")
-          }
-
-          if (isRequest) {
-            return originalFetch(
-              new Request(input as Request, {
-                headers,
-                body: JSON.stringify(parsed),
-              })
-            )
-          }
-
-          return originalFetch(
-            new Request(urlStr, {
-              ...init,
-              headers,
-              body: JSON.stringify(parsed),
-            })
-          )
-
+          return await processFetchRequest(input, init, hostname, isRequest, parsed, originalFetch)
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error)
           console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
@@ -140,8 +164,7 @@ export function patchGlobalFetch(): void {
 
       if (hostname === "gateway.ai.cloudflare.com") {
         const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
-        headers.delete("authorization")
-        headers.delete("Authorization")
+        cleanHeaders(headers, hostname)
         return originalFetch(input, { ...init, headers })
       }
 

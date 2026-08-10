@@ -16,7 +16,10 @@ function sanitizeNonOpenAIReasoningEffort(record: Record<string, unknown>): void
   delete record.reasoningEffort
 }
 
-function sanitizeReasoningEffort(record: Record<string, unknown>, isOpenAI: boolean): void {
+function sanitizeReasoningEffort(record: Record<string, unknown>): void {
+  const modelName = typeof record.model === "string" ? record.model.toLowerCase() : ""
+  const isOpenAI = modelName.includes("openai") || modelName.includes("gpt") || modelName.startsWith("o1") || modelName.startsWith("o3")
+
   if (isOpenAI) {
     sanitizeOpenAIReasoningEffort(record)
   } else {
@@ -47,10 +50,7 @@ export function cleanParams(obj: unknown): void {
   }
   const record = obj as Record<string, unknown>
 
-  const modelName = typeof record.model === "string" ? record.model.toLowerCase() : ""
-  const isOpenAI = modelName.includes("openai") || modelName.includes("gpt") || modelName.startsWith("o1") || modelName.startsWith("o3")
-
-  sanitizeReasoningEffort(record, isOpenAI)
+  sanitizeReasoningEffort(record)
   sanitizeMaxTokens(record)
 
   for (const [key, val] of Object.entries(record)) {
@@ -118,13 +118,15 @@ function processFetchRequest(
   const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
   cleanHeaders(headers, hostname)
 
+  const method = (init?.method ?? (isRequest ? (input as Request).method : "GET")).toUpperCase()
+  const hasBody = method !== "GET" && method !== "HEAD"
+
   if (isRequest) {
-    return originalFetch(
-      new Request(input as Request, {
-        headers,
-        body: JSON.stringify(parsed),
-      })
-    )
+    const reqInit: RequestInit = { headers }
+    if (hasBody) {
+      reqInit.body = JSON.stringify(parsed)
+    }
+    return originalFetch(new Request(input as Request, reqInit))
   }
 
   let urlStr = ""
@@ -134,13 +136,15 @@ function processFetchRequest(
     urlStr = input.href
   }
 
-  return originalFetch(
-    new Request(urlStr, {
-      ...init,
-      headers,
-      body: JSON.stringify(parsed),
-    })
-  )
+  const reqInit: RequestInit = {
+    ...init,
+    headers,
+  }
+  if (hasBody) {
+    reqInit.body = JSON.stringify(parsed)
+  }
+
+  return originalFetch(new Request(urlStr, reqInit))
 }
 
 declare global {

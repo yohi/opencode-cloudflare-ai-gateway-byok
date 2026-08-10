@@ -51,11 +51,12 @@ export function wrapModel<T>(model: T): T {
         if (typeof value !== "function") {
           return undefined
         }
+        const fn = value as (...args: unknown[]) => unknown
         return (options: Record<string, unknown>, ...args: unknown[]) => {
           if (options && typeof options === "object") {
             cleanParams(options)
           }
-          return (value as Function).call(target, options, ...args)
+          return fn.call(target, options, ...args)
         }
       }
       return value

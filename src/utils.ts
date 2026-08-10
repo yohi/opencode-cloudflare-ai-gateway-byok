@@ -55,24 +55,21 @@ export function cleanParams(obj: unknown): void {
 
 export function wrapModel<T>(model: T): T {
   if (!model || typeof model !== "object") return model
-  return new Proxy(model as object, {
-    get(target: Record<string | symbol, unknown>, prop: string | symbol, receiver: unknown) {
-      const value = Reflect.get(target, prop, receiver)
-      if (prop === "doStream" || prop === "doGenerate") {
-        if (typeof value !== "function") {
-          return undefined
+
+  const obj = model as Record<string, unknown>
+  for (const method of ["doStream", "doGenerate"] as const) {
+    const orig = obj[method]
+    if (typeof orig === "function") {
+      const fn = orig as (...args: unknown[]) => unknown
+      obj[method] = (options: Record<string, unknown>, ...args: unknown[]) => {
+        if (options && typeof options === "object") {
+          cleanParams(options)
         }
-        const fn = value as (...args: unknown[]) => unknown
-        return (options: Record<string, unknown>, ...args: unknown[]) => {
-          if (options && typeof options === "object") {
-            cleanParams(options)
-          }
-          return Reflect.apply(fn, target, [options, ...args])
-        }
+        return Reflect.apply(fn, obj, [options, ...args])
       }
-      return value
-    },
-  }) as T
+    }
+  }
+  return model
 }
 
 async function extractBodyString(input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<string | undefined> {

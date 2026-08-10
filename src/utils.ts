@@ -45,10 +45,10 @@ export function cleanParams(obj: unknown): void {
   sanitizeReasoningEffort(record, isOpenAI)
   sanitizeMaxTokens(record)
 
-  for (const key of Object.keys(record)) {
+  for (const [key, val] of Object.entries(record)) {
     if (key === "maxTokens" || key === "max_tokens" || key === "maxOutputTokens") continue
-    if (record[key] && typeof record[key] === "object") {
-      cleanParams(record[key])
+    if (val && typeof val === "object") {
+      cleanParams(val)
     }
   }
 }
@@ -67,7 +67,7 @@ export function wrapModel<T>(model: T): T {
           if (options && typeof options === "object") {
             cleanParams(options)
           }
-          return fn.call(target, options, ...args)
+          return Reflect.apply(fn, target, [options, ...args])
         }
       }
       return value
@@ -127,9 +127,14 @@ function processFetchRequest(
   )
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __byok_fetch_patched__: boolean | undefined
+}
+
 export function patchGlobalFetch(): void {
-  if ((globalThis as Record<string, unknown>).__byok_fetch_patched__) return
-  ;(globalThis as Record<string, unknown>).__byok_fetch_patched__ = true
+  if (globalThis.__byok_fetch_patched__) return
+  globalThis.__byok_fetch_patched__ = true
   const originalFetch = globalThis.fetch
 
   globalThis.fetch = Object.assign(

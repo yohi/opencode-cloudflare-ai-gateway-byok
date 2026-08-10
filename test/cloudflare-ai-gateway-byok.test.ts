@@ -217,11 +217,11 @@ describe("patchGlobalFetch & utils", () => {
     expect(capturedUrl).toBe(targetUrl.href)
 
     globalThis.fetch = originalFetch
-    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+    delete globalThis.__byok_fetch_patched__
   })
 
   test("patchGlobalFetch sanitizes body JSON removing max_tokens", async () => {
-    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+    delete globalThis.__byok_fetch_patched__
     let capturedBody: string | undefined
     const originalFetch = globalThis.fetch
     const mockFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -248,7 +248,7 @@ describe("patchGlobalFetch & utils", () => {
     expect(parsed.max_completion_tokens).toBe(300)
 
     globalThis.fetch = originalFetch
-    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+    delete globalThis.__byok_fetch_patched__
   })
 
   test("wrapModel transforms maxTokens to max_completion_tokens and deletes maxTokens", async () => {

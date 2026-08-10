@@ -6,16 +6,24 @@ export function cleanParams(obj: unknown): void {
   }
   const record = obj as Record<string, unknown>
 
-  if (record.reasoningEffort !== undefined) {
-    record.reasoning_effort = record.reasoningEffort
-    delete record.reasoningEffort
-  }
+  const modelName = typeof record.model === "string" ? record.model.toLowerCase() : ""
+  const isOpenAI = modelName.includes("openai") || modelName.includes("gpt") || modelName.startsWith("o1") || modelName.startsWith("o3")
 
-  if (Array.isArray(record.tools) && record.tools.length > 0) {
-    if (record.tools.length > 128) {
-      record.tools = record.tools.slice(0, 128)
+  if (isOpenAI) {
+    if (record.reasoningEffort !== undefined) {
+      record.reasoning_effort = record.reasoningEffort
+      delete record.reasoningEffort
     }
-    record.reasoning_effort = "none"
+    if (Array.isArray(record.tools) && record.tools.length > 0) {
+      if (record.tools.length > 128) {
+        record.tools = record.tools.slice(0, 128)
+      }
+      record.reasoning_effort = "none"
+    }
+  } else {
+    // Gemini/Google, Anthropic and other non-OpenAI models do NOT support reasoning_effort/reasoningEffort
+    delete record.reasoning_effort
+    delete record.reasoningEffort
   }
 
   if (record.maxTokens !== undefined || record.max_tokens !== undefined || record.maxOutputTokens !== undefined || record.max_completion_tokens !== undefined) {

@@ -268,9 +268,10 @@ describe("patchGlobalFetch & utils", () => {
     expect(receivedOptions?.maxOutputTokens).toBeUndefined()
   })
 
-  test("cleanParams converts reasoningEffort to reasoning_effort = 'none' when tools are present", async () => {
+  test("cleanParams converts reasoningEffort to reasoning_effort = 'none' when tools are present for OpenAI models", async () => {
     const { cleanParams } = await import("../src/utils.js")
     const body: Record<string, unknown> = {
+      model: "openai/gpt-4o",
       tools: [{ type: "function" }],
       reasoningEffort: "high",
     }
@@ -279,20 +280,20 @@ describe("patchGlobalFetch & utils", () => {
     expect(body.reasoning_effort).toBe("none")
   })
 
-  test("cleanParams handles nested objects recursively for tools and sets reasoning_effort = 'none'", async () => {
+  test("cleanParams removes reasoning_effort and reasoningEffort for non-OpenAI models (e.g. Gemini)", async () => {
     const { cleanParams } = await import("../src/utils.js")
-    const body: Record<string, Record<string, unknown>> = {
-      nested: {
-        tools: [{ type: "function" }],
-        reasoningEffort: "medium",
-      },
+    const body: Record<string, unknown> = {
+      model: "google/gemini-1.5-flash",
+      tools: [{ type: "function" }],
+      reasoningEffort: "medium",
+      reasoning_effort: "high",
     }
     cleanParams(body)
-    expect(body.nested.reasoningEffort).toBeUndefined()
-    expect(body.nested.reasoning_effort).toBe("none")
+    expect(body.reasoningEffort).toBeUndefined()
+    expect(body.reasoning_effort).toBeUndefined()
   })
 
-  test("wrapModel sets reasoning_effort = 'none' when tools are present", async () => {
+  test("wrapModel sets reasoning_effort = 'none' when tools are present for OpenAI models", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -302,7 +303,7 @@ describe("patchGlobalFetch & utils", () => {
     }
 
     const wrapped = wrapModel(mockModel)
-    wrapped.doGenerate({ tools: [{ type: "function" }], reasoningEffort: "medium" })
+    wrapped.doGenerate({ model: "openai/gpt-4o", tools: [{ type: "function" }], reasoningEffort: "medium" })
 
     expect(receivedOptions?.reasoningEffort).toBeUndefined()
     expect(receivedOptions?.reasoning_effort).toBe("none")

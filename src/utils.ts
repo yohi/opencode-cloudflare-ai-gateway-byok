@@ -16,12 +16,11 @@ export function cleanParams(obj: unknown): void {
       record.tools = record.tools.slice(0, 128)
     }
     record.reasoning_effort = "none"
-    delete record.reasoningEffort
   }
 
-  if (record.maxTokens !== undefined || record.max_tokens !== undefined || record.maxOutputTokens !== undefined) {
-    const val = record.maxTokens ?? record.max_tokens ?? record.maxOutputTokens
-    record.max_completion_tokens = record.max_completion_tokens ?? val
+  if (record.maxTokens !== undefined || record.max_tokens !== undefined || record.maxOutputTokens !== undefined || record.max_completion_tokens !== undefined) {
+    const val = record.maxTokens ?? record.max_tokens ?? record.maxOutputTokens ?? record.max_completion_tokens
+    record.max_completion_tokens = val
     delete record.maxTokens
     delete record.max_tokens
     delete record.maxOutputTokens

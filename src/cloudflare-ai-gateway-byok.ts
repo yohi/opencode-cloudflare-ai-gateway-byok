@@ -42,22 +42,55 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
           () => import("ai-gateway-provider/providers/unified")
         ).pipe(Effect.orDie)
 
+        const { createGoogleGenerativeAI } = yield* Effect.promise(
+          () => import("ai-gateway-provider/providers/google")
+        ).pipe(Effect.orDie)
+
+        const { createAnthropic } = yield* Effect.promise(
+          () => import("ai-gateway-provider/providers/anthropic")
+        ).pipe(Effect.orDie)
+
+        const { createOpenAI } = yield* Effect.promise(
+          () => import("ai-gateway-provider/providers/openai")
+        ).pipe(Effect.orDie)
+
         const gateway = createAiGateway({
           accountId,
           gateway: gatewayId,
           apiKey,
           options,
         })
+
         const unified = createUnified({
           baseURL: DEFAULT_BASE_URL,
         })
+        const google = createGoogleGenerativeAI()
+        const anthropic = createAnthropic()
+        const openai = createOpenAI()
+
+        function resolveModel(modelID: string) {
+          const lower = modelID.toLowerCase()
+          if (lower.startsWith("google/") || lower.startsWith("google-ai-studio/") || lower.includes("gemini")) {
+            const cleanID = modelID.replace(/^(google-ai-studio|google)\//i, "")
+            return gateway(google(cleanID))
+          }
+          if (lower.startsWith("anthropic/") || lower.includes("claude")) {
+            const cleanID = modelID.replace(/^anthropic\//i, "")
+            return gateway(anthropic(cleanID))
+          }
+          if (lower.startsWith("openai/") || lower.includes("gpt") || lower.startsWith("o1") || lower.startsWith("o3")) {
+            const cleanID = modelID.replace(/^openai\//i, "")
+            return gateway(openai.chat(cleanID))
+          }
+          return gateway(unified(modelID))
+        }
 
         evt.sdk = Object.assign(
-          (modelID: string) => wrapModel(gateway(unified(modelID))),
+          (modelID: string) => wrapModel(resolveModel(modelID)),
           gateway,
           {
             languageModel(modelID: string) {
-              return wrapModel(gateway(unified(modelID)))
+              return wrapModel(resolveModel(modelID))
             },
           }
         )

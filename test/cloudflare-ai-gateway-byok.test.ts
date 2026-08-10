@@ -372,6 +372,20 @@ describe("CloudflareAIGatewayBYOK", () => {
     },
   }))
 
+  mock.module("ai-gateway-provider/providers/google", () => ({
+    createGoogleGenerativeAI: () => (modelId: string) => ({ googleModel: modelId }),
+  }))
+
+  mock.module("ai-gateway-provider/providers/anthropic", () => ({
+    createAnthropic: () => (modelId: string) => ({ anthropicModel: modelId }),
+  }))
+
+  mock.module("ai-gateway-provider/providers/openai", () => ({
+    createOpenAI: () => ({
+      chat: (modelId: string) => ({ openaiModel: modelId }),
+    }),
+  }))
+
   afterEach(() => {
     createAiGatewayCalls = []
     unifiedModelCalls = []
@@ -498,18 +512,19 @@ describe("CloudflareAIGatewayBYOK", () => {
     expect(unifiedModelCalls).toHaveLength(0)
   })
 
-  test("createUnified is called with empty object and model IDs pass through", async () => {
+  test("createUnified / resolveModel routes google/gemini models to google provider", async () => {
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
     const fakeSdk = {
-      languageModel: (modelId: string) => ({ gatewayModel: { unifiedModel: modelId } }),
+      languageModel: (modelId: string) => ({ gatewayModel: { modelId } }),
     }
-    const evt: LanguageEvent = { model: modelStub, sdk: fakeSdk, options: {}, language: undefined }
+    const googleModel = { providerID: "cloudflare-ai-gateway-byok", api: { id: "google/gemini-1.5-flash" } } as unknown as import("@opencode-ai/sdk/v2/types").ModelV2Info
+    const evt: LanguageEvent = { model: googleModel, sdk: fakeSdk, options: {}, language: undefined }
     const result = ctx.runLanguage(evt)
     if (result) await Effect.runPromise(result)
 
-    expect(evt.language as any).toEqual({ gatewayModel: { unifiedModel: "test-model" } })
+    expect(evt.language as any).toEqual({ gatewayModel: { modelId: "google/gemini-1.5-flash" } })
   })
 
   test("metadata cache log pass through to createAiGateway", async () => {

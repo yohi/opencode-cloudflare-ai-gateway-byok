@@ -217,10 +217,41 @@ describe("patchGlobalFetch & utils", () => {
     expect(capturedUrl).toBe(targetUrl.href)
 
     globalThis.fetch = originalFetch
-    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+    delete globalThis.__byok_fetch_patched__
   })
 
-  test("wrapModel transforms maxTokens to maxOutputTokens", async () => {
+  test("patchGlobalFetch sanitizes body JSON removing max_tokens", async () => {
+    delete globalThis.__byok_fetch_patched__
+    let capturedBody: string | undefined
+    const originalFetch = globalThis.fetch
+    const mockFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (input instanceof Request) {
+        capturedBody = await input.text()
+      } else {
+        capturedBody = typeof init?.body === "string" ? init.body : undefined
+      }
+      return new Response("ok")
+    }) as typeof fetch
+    globalThis.fetch = mockFetch
+
+    const { patchGlobalFetch } = await import("../src/utils.js")
+    patchGlobalFetch()
+
+    await globalThis.fetch("https://gateway.ai.cloudflare.com/v1/compat/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ max_tokens: 300, model: "gpt-5.6-sol" }),
+    })
+
+    expect(capturedBody).toBeDefined()
+    const parsed = JSON.parse(capturedBody!)
+    expect(parsed.max_tokens).toBeUndefined()
+    expect(parsed.max_completion_tokens).toBe(300)
+
+    globalThis.fetch = originalFetch
+    delete globalThis.__byok_fetch_patched__
+  })
+
+  test("wrapModel transforms maxTokens to max_completion_tokens and deletes maxTokens", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -232,11 +263,37 @@ describe("patchGlobalFetch & utils", () => {
     const wrapped = wrapModel(mockModel)
     wrapped.doGenerate({ maxTokens: 100 })
 
-    expect(receivedOptions?.maxOutputTokens).toBe(100)
+    expect(receivedOptions?.max_completion_tokens).toBe(100)
     expect(receivedOptions?.maxTokens).toBeUndefined()
+    expect(receivedOptions?.maxOutputTokens).toBeUndefined()
   })
 
-  test("wrapModel overrides reasoningEffort to 'none' when tools are present", async () => {
+  test("cleanParams converts reasoningEffort to reasoning_effort = 'none' when tools are present for OpenAI models", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body: Record<string, unknown> = {
+      model: "openai/gpt-4o",
+      tools: [{ type: "function" }],
+      reasoningEffort: "high",
+    }
+    cleanParams(body)
+    expect(body.reasoningEffort).toBeUndefined()
+    expect(body.reasoning_effort).toBe("none")
+  })
+
+  test("cleanParams removes reasoning_effort and reasoningEffort for non-OpenAI models (e.g. Gemini)", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body: Record<string, unknown> = {
+      model: "google/gemini-1.5-flash",
+      tools: [{ type: "function" }],
+      reasoningEffort: "medium",
+      reasoning_effort: "high",
+    }
+    cleanParams(body)
+    expect(body.reasoningEffort).toBeUndefined()
+    expect(body.reasoning_effort).toBeUndefined()
+  })
+
+  test("wrapModel sets reasoning_effort = 'none' when tools are present for OpenAI models", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -246,20 +303,118 @@ describe("patchGlobalFetch & utils", () => {
     }
 
     const wrapped = wrapModel(mockModel)
-    wrapped.doGenerate({ tools: [{ type: "function" }], reasoningEffort: "medium" })
+    wrapped.doGenerate({ model: "openai/gpt-4o", tools: [{ type: "function" }], reasoningEffort: "medium" })
 
     expect(receivedOptions?.reasoningEffort).toBeUndefined()
     expect(receivedOptions?.reasoning_effort).toBe("none")
   })
 
-  test("cleanParams sets reasoning_effort to 'none' when tools are present", async () => {
+  test("cleanParams converts max_tokens to max_completion_tokens, deleting max_tokens and maxOutputTokens", async () => {
     const { cleanParams } = await import("../src/utils.js")
-    const body = {
-      tools: [{ type: "function" }],
-      reasoning_effort: "high",
+    const body: Record<string, unknown> = {
+      max_tokens: 150,
+      model: "gpt-4o",
     }
     cleanParams(body)
-    expect(body.reasoning_effort).toBe("none")
+    expect(body.max_tokens).toBeUndefined()
+    expect(body.maxOutputTokens).toBeUndefined()
+    expect(body.max_completion_tokens).toBe(150)
+  })
+
+  test("cleanParams converts maxTokens / maxOutputTokens to max_completion_tokens and deletes originals", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body: Record<string, unknown> = {
+      maxTokens: 200,
+      maxOutputTokens: 200,
+    }
+    cleanParams(body)
+    expect(body.maxTokens).toBeUndefined()
+    expect(body.maxOutputTokens).toBeUndefined()
+    expect(body.max_completion_tokens).toBe(200)
+  })
+
+  test("cleanParams handles nested max_tokens removal recursively", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body: Record<string, Record<string, unknown>> = {
+      options: {
+        max_tokens: 500,
+      },
+    }
+    cleanParams(body)
+    expect(body.options.max_tokens).toBeUndefined()
+    expect(body.options.maxOutputTokens).toBeUndefined()
+    expect(body.options.max_completion_tokens).toBe(500)
+  })
+
+  test("cleanParams preserves tool schema properties.max_tokens", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body = {
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "test_tool",
+            parameters: {
+              type: "object",
+              properties: {
+                max_tokens: { type: "integer", description: "max tokens count" },
+              },
+            },
+          },
+        },
+      ],
+    }
+    cleanParams(body)
+    const toolProps = (body.tools[0].function.parameters.properties as any)
+    expect(toolProps.max_tokens).toBeDefined()
+    expect(toolProps.max_tokens.type).toBe("integer")
+    expect(toolProps.max_completion_tokens).toBeUndefined()
+  })
+
+  test("patchGlobalFetch leaves non-Cloudflare Gateway request JSON unchanged", async () => {
+    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
+    let capturedInit: RequestInit | undefined
+    const mockOriginalFetch = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      capturedInit = init
+      return new Response("ok")
+    }) as typeof fetch
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = mockOriginalFetch
+
+    const { patchGlobalFetch } = await import("../src/utils.js")
+    patchGlobalFetch()
+
+    const payload = JSON.stringify({ max_tokens: 100, custom_field: "value" })
+    await globalThis.fetch("https://api.example.com/v1/test", {
+      method: "POST",
+      body: payload,
+    })
+
+    expect(capturedInit?.body).toBe(payload)
+    globalThis.fetch = originalFetch
+    delete globalThis.__byok_fetch_patched__
+  })
+
+  test("cleanParams does not alter max_tokens inside arbitrary nested user data or messages", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body = {
+      max_tokens: 200,
+      messages: [
+        {
+          role: "user",
+          content: { max_tokens: 50 },
+        },
+      ],
+      custom_data: {
+        max_tokens: 999,
+      },
+    }
+    cleanParams(body)
+    expect(body.max_tokens).toBeUndefined()
+    expect((body as any).max_completion_tokens).toBe(200)
+    expect(body.messages[0].content.max_tokens).toBe(50)
+    expect(body.custom_data.max_tokens).toBe(999)
   })
 })
 
@@ -272,6 +427,7 @@ const modelStub = {
 describe("CloudflareAIGatewayBYOK", () => {
   let createAiGatewayCalls: Array<unknown> = []
   let unifiedModelCalls: Array<string> = []
+  let googleModelCalls: Array<string> = []
 
   mock.module("ai-gateway-provider", () => ({
     createAiGateway: (opts: unknown) => {
@@ -287,9 +443,27 @@ describe("CloudflareAIGatewayBYOK", () => {
     },
   }))
 
+  mock.module("ai-gateway-provider/providers/google", () => ({
+    createGoogleGenerativeAI: () => (modelId: string) => {
+      googleModelCalls.push(modelId)
+      return { googleModel: modelId }
+    },
+  }))
+
+  mock.module("ai-gateway-provider/providers/anthropic", () => ({
+    createAnthropic: () => (modelId: string) => ({ anthropicModel: modelId }),
+  }))
+
+  mock.module("ai-gateway-provider/providers/openai", () => ({
+    createOpenAI: () => ({
+      chat: (modelId: string) => ({ openaiModel: modelId }),
+    }),
+  }))
+
   afterEach(() => {
     createAiGatewayCalls = []
     unifiedModelCalls = []
+    googleModelCalls = []
   })
 
   function baseOptions() {
@@ -413,18 +587,29 @@ describe("CloudflareAIGatewayBYOK", () => {
     expect(unifiedModelCalls).toHaveLength(0)
   })
 
-  test("createUnified is called with empty object and model IDs pass through", async () => {
+  test("createUnified / resolveModel routes google/gemini models to google provider", async () => {
+    const restore = withEnv({
+      CLOUDFLARE_ACCOUNT_ID: undefined,
+      CLOUDFLARE_GATEWAY_ID: undefined,
+      CLOUDFLARE_API_TOKEN: undefined,
+      CF_AIG_TOKEN: undefined,
+    })
+    afterEach(restore)
+
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
-    const fakeSdk = {
-      languageModel: (modelId: string) => ({ gatewayModel: { unifiedModel: modelId } }),
-    }
-    const evt: LanguageEvent = { model: modelStub, sdk: fakeSdk, options: {}, language: undefined }
-    const result = ctx.runLanguage(evt)
-    if (result) await Effect.runPromise(result)
+    const sdkEvt: SdkEvent = { package: "@yohi/cloudflare-ai-gateway-byok", options: baseOptions(), model: modelStub }
+    const sdkRes = ctx.runSdk(sdkEvt)
+    if (sdkRes) await Effect.runPromise(sdkRes)
 
-    expect(evt.language as any).toEqual({ gatewayModel: { unifiedModel: "test-model" } })
+    const googleModel = { providerID: "cloudflare-ai-gateway-byok", api: { id: "google/gemini-1.5-flash" } } as unknown as import("@opencode-ai/sdk/v2/types").ModelV2Info
+    const langEvt: LanguageEvent = { model: googleModel, sdk: sdkEvt.sdk, options: {}, language: undefined }
+    const langRes = ctx.runLanguage(langEvt)
+    if (langRes) await Effect.runPromise(langRes)
+
+    expect(googleModelCalls).toContain("gemini-1.5-flash")
+    expect(langEvt.language as any).toEqual({ gatewayModel: { googleModel: "gemini-1.5-flash" } })
   })
 
   test("metadata cache log pass through to createAiGateway", async () => {

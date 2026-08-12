@@ -7,6 +7,10 @@ import { createAiGateway } from "ai-gateway-provider"
 import { createUnified } from "ai-gateway-provider/providers/unified"
 import { patchGlobalFetch, wrapModel } from "./utils.js"
 
+import { createGoogleGenerativeAI } from "ai-gateway-provider/providers/google"
+import { createAnthropic } from "ai-gateway-provider/providers/anthropic"
+import { createOpenAI } from "ai-gateway-provider/providers/openai"
+
 export function createCloudflareAIGatewayBYOK(options: Record<string, unknown> = {}) {
   patchGlobalFetch()
   const config = gatewayConfig(options)
@@ -29,10 +33,30 @@ export function createCloudflareAIGatewayBYOK(options: Record<string, unknown> =
   const unified = createUnified({
     baseURL: DEFAULT_BASE_URL,
   })
+  const google = createGoogleGenerativeAI()
+  const anthropic = createAnthropic()
+  const openai = createOpenAI()
+
+  function resolveModel(modelId: string) {
+    const lower = modelId.toLowerCase()
+    if (lower.startsWith("google/") || lower.startsWith("google-ai-studio/") || lower.includes("gemini")) {
+      const cleanID = modelId.replace(/^(google-ai-studio|google)\//i, "")
+      return gateway(google(cleanID))
+    }
+    if (lower.startsWith("anthropic/") || lower.includes("claude")) {
+      const cleanID = modelId.replace(/^anthropic\//i, "")
+      return gateway(anthropic(cleanID))
+    }
+    if (lower.startsWith("openai/") || lower.includes("gpt") || lower.startsWith("o1") || lower.startsWith("o3")) {
+      const cleanID = modelId.replace(/^openai\//i, "")
+      return gateway(openai.chat(cleanID))
+    }
+    return gateway(unified(modelId))
+  }
 
   return {
     languageModel(modelId: string) {
-      return wrapModel(gateway(unified(modelId)))
+      return wrapModel(resolveModel(modelId))
     },
   }
 }

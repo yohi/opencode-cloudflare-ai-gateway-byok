@@ -1,65 +1,81 @@
-export function cleanParams(obj: unknown): void {
-  if (!obj || typeof obj !== "object") return
-  if (Array.isArray(obj)) {
-    for (const item of obj) cleanParams(item)
-    return
+function sanitizeOpenAIReasoningEffort(record: Record<string, unknown>): void {
+  if (record.reasoningEffort !== undefined) {
+    record.reasoning_effort = record.reasoningEffort
+    delete record.reasoningEffort
   }
-  const record = obj as Record<string, unknown>
   if (Array.isArray(record.tools) && record.tools.length > 0) {
-    if (record.tools.length > 128) {
-      record.tools = record.tools.slice(0, 128)
-    }
-    if (record.reasoning_effort !== undefined) {
-      record.reasoning_effort = "none"
-    }
+    record.reasoning_effort = "none"
   }
-  if (record.max_tokens !== undefined) {
-    record.max_completion_tokens = record.max_completion_tokens ?? record.max_tokens
+}
+
+function sanitizeNonOpenAIReasoningEffort(record: Record<string, unknown>): void {
+  delete record.reasoning_effort
+  delete record.reasoningEffort
+}
+
+function sanitizeReasoningEffort(record: Record<string, unknown>): void {
+  const modelName = typeof record.model === "string" ? record.model.toLowerCase() : ""
+  const isOpenAI = modelName.includes("openai") || modelName.includes("gpt") || modelName.startsWith("o1") || modelName.startsWith("o3")
+
+  if (isOpenAI) {
+    sanitizeOpenAIReasoningEffort(record)
+  } else {
+    sanitizeNonOpenAIReasoningEffort(record)
+  }
+}
+
+function sanitizeMaxTokens(record: Record<string, unknown>): void {
+  if (
+    record.maxTokens !== undefined ||
+    record.max_tokens !== undefined ||
+    record.maxOutputTokens !== undefined ||
+    record.max_completion_tokens !== undefined
+  ) {
+    const val = record.maxTokens ?? record.max_tokens ?? record.maxOutputTokens ?? record.max_completion_tokens
+    record.max_completion_tokens = val
+    delete record.maxTokens
     delete record.max_tokens
+    delete record.maxOutputTokens
   }
-  if (record.query && typeof record.query === "object") {
-    cleanParams(record.query)
+}
+
+export function cleanParams(obj: unknown): void {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return
+  const record = obj as Record<string, unknown>
+
+  sanitizeReasoningEffort(record)
+  sanitizeMaxTokens(record)
+
+  if (record.options && typeof record.options === "object" && !Array.isArray(record.options)) {
+    cleanParams(record.options)
   }
 }
 
 export function wrapModel<T>(model: T): T {
   if (!model || typeof model !== "object") return model
-  return new Proxy(model as object, {
-    get(target: Record<string | symbol, unknown>, prop: string | symbol, receiver: unknown) {
-      if (prop === "doStream" || prop === "doGenerate") {
-        if (typeof target[prop] !== "function") {
-          return undefined
+
+  const obj = model as Record<string, unknown>
+  for (const method of ["doStream", "doGenerate"] as const) {
+    const orig = obj[method]
+    if (typeof orig === "function") {
+      const fn = orig as (...args: unknown[]) => unknown
+      obj[method] = (options: Record<string, unknown>, ...args: unknown[]) => {
+        if (options && typeof options === "object") {
+          cleanParams(options)
         }
-        return (options: Record<string, unknown>) => {
-          if (options) {
-            const newOpts = { ...options }
-            if (newOpts.reasoningEffort !== undefined) {
-              newOpts.reasoning_effort = newOpts.reasoningEffort
-              delete newOpts.reasoningEffort
-            }
-            if (Array.isArray(newOpts.tools) && newOpts.tools.length > 0) {
-              if (newOpts.tools.length > 128) {
-                newOpts.tools = newOpts.tools.slice(0, 128)
-              }
-              if (newOpts.reasoning_effort !== undefined) {
-                newOpts.reasoning_effort = "none"
-              }
-            }
-            if (newOpts.maxTokens !== undefined) {
-              newOpts.maxOutputTokens = newOpts.maxOutputTokens ?? newOpts.maxTokens
-              delete newOpts.maxTokens
-            }
-            options = newOpts
-          }
-          return (target[prop] as Function)(options)
-        }
+        return Reflect.apply(fn, obj, [options, ...args])
       }
-      return Reflect.get(target, prop, receiver)
-    },
-  }) as T
+    }
+  }
+  return model
 }
 
 async function extractBodyString(input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<string | undefined> {
+  const method = (init?.method ?? (typeof input === "object" && input !== null && "method" in input ? (input as Request).method : "GET")).toUpperCase()
+  if (method === "GET" || method === "HEAD") {
+    return undefined
+  }
+
   if (typeof init?.body === "string") {
     return init.body
   }
@@ -74,22 +90,83 @@ async function extractBodyString(input: Parameters<typeof fetch>[0], init?: Requ
   return undefined
 }
 
+function cleanHeaders(headers: Headers, hostname: string): void {
+  if (hostname === "gateway.ai.cloudflare.com") {
+    headers.delete("authorization")
+    headers.delete("Authorization")
+  }
+}
+
+function processFetchRequest(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit | undefined,
+  hostname: string,
+  isRequest: boolean,
+  parsed: unknown,
+  originalFetch: typeof fetch
+): Promise<Response> {
+  const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
+  cleanHeaders(headers, hostname)
+
+  const method = (init?.method ?? (isRequest ? (input as Request).method : "GET")).toUpperCase()
+  const hasBody = method !== "GET" && method !== "HEAD"
+
+  if (isRequest) {
+    const reqInit: RequestInit = {
+      ...init,
+      headers,
+    }
+    if (hasBody) {
+      reqInit.body = JSON.stringify(parsed)
+    }
+    return originalFetch(new Request(input as Request, reqInit))
+  }
+
+  let urlStr = ""
+  if (typeof input === "string") {
+    urlStr = input
+  } else if (input instanceof URL) {
+    urlStr = input.href
+  }
+
+  const reqInit: RequestInit = {
+    ...init,
+    headers,
+  }
+  if (hasBody) {
+    reqInit.body = JSON.stringify(parsed)
+  }
+
+  return originalFetch(new Request(urlStr, reqInit))
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __byok_fetch_patched__: boolean | undefined
+}
+
+function resolveUrlString(input: Parameters<typeof fetch>[0], isRequest: boolean): string {
+  if (isRequest) {
+    return (input as Request).url
+  }
+  if (typeof input === "string") {
+    return input
+  }
+  if (input instanceof URL) {
+    return input.href
+  }
+  return ""
+}
+
 export function patchGlobalFetch(): void {
-  if ((globalThis as Record<string, unknown>).__byok_fetch_patched__) return
-  ;(globalThis as Record<string, unknown>).__byok_fetch_patched__ = true
+  if (globalThis.__byok_fetch_patched__) return
+  globalThis.__byok_fetch_patched__ = true
   const originalFetch = globalThis.fetch
 
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-
       const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
-      const urlStr = isRequest
-        ? (input as Request).url
-        : typeof input === "string"
-        ? input
-        : input instanceof URL
-        ? input.href
-        : ""
+      const urlStr = resolveUrlString(input, isRequest)
 
       let hostname = ""
       try {
@@ -98,33 +175,25 @@ export function patchGlobalFetch(): void {
         // invalid URL or empty
       }
 
-      if (hostname !== "gateway.ai.cloudflare.com") {
-        return originalFetch(input, init)
-      }
-
-      const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
-      headers.delete("authorization")
-      headers.delete("Authorization")
-
-      const bodyStr = await extractBodyString(input, init)
-      if (bodyStr) {
-        try {
-          const parsed = JSON.parse(bodyStr)
-          cleanParams(parsed)
-          return originalFetch(
-            new Request(urlStr, {
-              ...init,
-              headers,
-              body: JSON.stringify(parsed),
-            })
-          )
-
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error)
-          console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
+      if (hostname === "gateway.ai.cloudflare.com") {
+        const bodyStr = await extractBodyString(input, init)
+        if (bodyStr) {
+          try {
+            const parsed = JSON.parse(bodyStr)
+            cleanParams(parsed)
+            return await processFetchRequest(input, init, hostname, isRequest, parsed, originalFetch)
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error)
+            console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
+          }
         }
+
+        const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
+        cleanHeaders(headers, hostname)
+        return originalFetch(input, { ...init, headers })
       }
-      return originalFetch(input, { ...init, headers })
+
+      return originalFetch(input, init)
     },
     originalFetch,
   )

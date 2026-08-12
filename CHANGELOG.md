@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.5](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.4...v1.0.5) (2026-08-12)
+
+
+### 🐛 Bug Fixes
+
+* **ci:** update oven-sh/setup-bun commit SHA ([#23](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/issues/23)) ([0829716](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/082971611b1a00b9548e7839e86c65fc1dcb40ef))
+* LLMリクエストパラメータ（reasoning_effort, max_tokens）の正規化と不要プロパティ除去 ([#22](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/issues/22)) ([f4a9154](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/f4a9154ccd5765fada0672c27fd2eb7a815c5526))
+
 ## [1.0.4](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.3...v1.0.4) (2026-08-08)
 
 

@@ -372,18 +372,18 @@ describe("patchGlobalFetch & utils", () => {
   })
 
   test("patchGlobalFetch leaves non-Cloudflare Gateway request JSON unchanged", async () => {
-    const { patchGlobalFetch } = await import("../src/utils.js")
-    patchGlobalFetch()
-
+    delete (globalThis as Record<string, unknown>).__byok_fetch_patched__
     let capturedInit: RequestInit | undefined
-    const mockOriginalFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const mockOriginalFetch = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       capturedInit = init
       return new Response("ok")
     }) as typeof fetch
 
-    const globalFetchBackup = globalThis.fetch
-    // @ts-ignore
+    const originalFetch = globalThis.fetch
     globalThis.fetch = mockOriginalFetch
+
+    const { patchGlobalFetch } = await import("../src/utils.js")
+    patchGlobalFetch()
 
     const payload = JSON.stringify({ max_tokens: 100, custom_field: "value" })
     await globalThis.fetch("https://api.example.com/v1/test", {
@@ -392,7 +392,29 @@ describe("patchGlobalFetch & utils", () => {
     })
 
     expect(capturedInit?.body).toBe(payload)
-    globalThis.fetch = globalFetchBackup
+    globalThis.fetch = originalFetch
+    delete globalThis.__byok_fetch_patched__
+  })
+
+  test("cleanParams does not alter max_tokens inside arbitrary nested user data or messages", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body = {
+      max_tokens: 200,
+      messages: [
+        {
+          role: "user",
+          content: { max_tokens: 50 },
+        },
+      ],
+      custom_data: {
+        max_tokens: 999,
+      },
+    }
+    cleanParams(body)
+    expect(body.max_tokens).toBeUndefined()
+    expect((body as any).max_completion_tokens).toBe(200)
+    expect(body.messages[0].content.max_tokens).toBe(50)
+    expect(body.custom_data.max_tokens).toBe(999)
   })
 })
 

@@ -40,22 +40,14 @@ function sanitizeMaxTokens(record: Record<string, unknown>): void {
 }
 
 export function cleanParams(obj: unknown): void {
-  if (!obj || typeof obj !== "object") return
-  if (Array.isArray(obj)) {
-    for (const item of obj) cleanParams(item)
-    return
-  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return
   const record = obj as Record<string, unknown>
 
   sanitizeReasoningEffort(record)
   sanitizeMaxTokens(record)
 
-  for (const [key, val] of Object.entries(record)) {
-    if (key === "maxTokens" || key === "max_tokens" || key === "maxOutputTokens") continue
-    if (key === "properties" || key === "messages" || key === "tools" || key === "content") continue
-    if (val && typeof val === "object") {
-      cleanParams(val)
-    }
+  if (record.options && typeof record.options === "object" && !Array.isArray(record.options)) {
+    cleanParams(record.options)
   }
 }
 

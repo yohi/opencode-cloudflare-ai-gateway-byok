@@ -346,7 +346,54 @@ describe("patchGlobalFetch & utils", () => {
     expect(body.options.max_completion_tokens).toBe(500)
   })
 
+  test("cleanParams preserves tool schema properties.max_tokens", async () => {
+    const { cleanParams } = await import("../src/utils.js")
+    const body = {
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "test_tool",
+            parameters: {
+              type: "object",
+              properties: {
+                max_tokens: { type: "integer", description: "max tokens count" },
+              },
+            },
+          },
+        },
+      ],
+    }
+    cleanParams(body)
+    const toolProps = (body.tools[0].function.parameters.properties as any)
+    expect(toolProps.max_tokens).toBeDefined()
+    expect(toolProps.max_tokens.type).toBe("integer")
+    expect(toolProps.max_completion_tokens).toBeUndefined()
+  })
 
+  test("patchGlobalFetch leaves non-Cloudflare Gateway request JSON unchanged", async () => {
+    const { patchGlobalFetch } = await import("../src/utils.js")
+    patchGlobalFetch()
+
+    let capturedInit: RequestInit | undefined
+    const mockOriginalFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      capturedInit = init
+      return new Response("ok")
+    }) as typeof fetch
+
+    const globalFetchBackup = globalThis.fetch
+    // @ts-ignore
+    globalThis.fetch = mockOriginalFetch
+
+    const payload = JSON.stringify({ max_tokens: 100, custom_field: "value" })
+    await globalThis.fetch("https://api.example.com/v1/test", {
+      method: "POST",
+      body: payload,
+    })
+
+    expect(capturedInit?.body).toBe(payload)
+    globalThis.fetch = globalFetchBackup
+  })
 })
 
 
@@ -358,6 +405,7 @@ const modelStub = {
 describe("CloudflareAIGatewayBYOK", () => {
   let createAiGatewayCalls: Array<unknown> = []
   let unifiedModelCalls: Array<string> = []
+  let googleModelCalls: Array<string> = []
 
   mock.module("ai-gateway-provider", () => ({
     createAiGateway: (opts: unknown) => {
@@ -374,7 +422,10 @@ describe("CloudflareAIGatewayBYOK", () => {
   }))
 
   mock.module("ai-gateway-provider/providers/google", () => ({
-    createGoogleGenerativeAI: () => (modelId: string) => ({ googleModel: modelId }),
+    createGoogleGenerativeAI: () => (modelId: string) => {
+      googleModelCalls.push(modelId)
+      return { googleModel: modelId }
+    },
   }))
 
   mock.module("ai-gateway-provider/providers/anthropic", () => ({
@@ -390,6 +441,7 @@ describe("CloudflareAIGatewayBYOK", () => {
   afterEach(() => {
     createAiGatewayCalls = []
     unifiedModelCalls = []
+    googleModelCalls = []
   })
 
   function baseOptions() {
@@ -514,18 +566,28 @@ describe("CloudflareAIGatewayBYOK", () => {
   })
 
   test("createUnified / resolveModel routes google/gemini models to google provider", async () => {
+    const restore = withEnv({
+      CLOUDFLARE_ACCOUNT_ID: undefined,
+      CLOUDFLARE_GATEWAY_ID: undefined,
+      CLOUDFLARE_API_TOKEN: undefined,
+      CF_AIG_TOKEN: undefined,
+    })
+    afterEach(restore)
+
     const ctx = createMockPluginContext()
     await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
 
-    const fakeSdk = {
-      languageModel: (modelId: string) => ({ gatewayModel: { modelId } }),
-    }
-    const googleModel = { providerID: "cloudflare-ai-gateway-byok", api: { id: "google/gemini-1.5-flash" } } as unknown as import("@opencode-ai/sdk/v2/types").ModelV2Info
-    const evt: LanguageEvent = { model: googleModel, sdk: fakeSdk, options: {}, language: undefined }
-    const result = ctx.runLanguage(evt)
-    if (result) await Effect.runPromise(result)
+    const sdkEvt: SdkEvent = { package: "@yohi/cloudflare-ai-gateway-byok", options: baseOptions(), model: modelStub }
+    const sdkRes = ctx.runSdk(sdkEvt)
+    if (sdkRes) await Effect.runPromise(sdkRes)
 
-    expect(evt.language as any).toEqual({ gatewayModel: { modelId: "google/gemini-1.5-flash" } })
+    const googleModel = { providerID: "cloudflare-ai-gateway-byok", api: { id: "google/gemini-1.5-flash" } } as unknown as import("@opencode-ai/sdk/v2/types").ModelV2Info
+    const langEvt: LanguageEvent = { model: googleModel, sdk: sdkEvt.sdk, options: {}, language: undefined }
+    const langRes = ctx.runLanguage(langEvt)
+    if (langRes) await Effect.runPromise(langRes)
+
+    expect(googleModelCalls).toContain("gemini-1.5-flash")
+    expect(langEvt.language as any).toEqual({ gatewayModel: { googleModel: "gemini-1.5-flash" } })
   })
 
   test("metadata cache log pass through to createAiGateway", async () => {

@@ -4,9 +4,6 @@ function sanitizeOpenAIReasoningEffort(record: Record<string, unknown>): void {
     delete record.reasoningEffort
   }
   if (Array.isArray(record.tools) && record.tools.length > 0) {
-    if (record.tools.length > 128) {
-      record.tools = record.tools.slice(0, 128)
-    }
     record.reasoning_effort = "none"
   }
 }
@@ -55,6 +52,7 @@ export function cleanParams(obj: unknown): void {
 
   for (const [key, val] of Object.entries(record)) {
     if (key === "maxTokens" || key === "max_tokens" || key === "maxOutputTokens") continue
+    if (key === "properties" || key === "messages" || key === "tools" || key === "content") continue
     if (val && typeof val === "object") {
       cleanParams(val)
     }
@@ -122,7 +120,10 @@ function processFetchRequest(
   const hasBody = method !== "GET" && method !== "HEAD"
 
   if (isRequest) {
-    const reqInit: RequestInit = { headers }
+    const reqInit: RequestInit = {
+      ...init,
+      headers,
+    }
     if (hasBody) {
       reqInit.body = JSON.stringify(parsed)
     }
@@ -182,19 +183,19 @@ export function patchGlobalFetch(): void {
         // invalid URL or empty
       }
 
-      const bodyStr = await extractBodyString(input, init)
-      if (bodyStr) {
-        try {
-          const parsed = JSON.parse(bodyStr)
-          cleanParams(parsed)
-          return await processFetchRequest(input, init, hostname, isRequest, parsed, originalFetch)
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error)
-          console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
-        }
-      }
-
       if (hostname === "gateway.ai.cloudflare.com") {
+        const bodyStr = await extractBodyString(input, init)
+        if (bodyStr) {
+          try {
+            const parsed = JSON.parse(bodyStr)
+            cleanParams(parsed)
+            return await processFetchRequest(input, init, hostname, isRequest, parsed, originalFetch)
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error)
+            console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
+          }
+        }
+
         const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
         cleanHeaders(headers, hostname)
         return originalFetch(input, { ...init, headers })

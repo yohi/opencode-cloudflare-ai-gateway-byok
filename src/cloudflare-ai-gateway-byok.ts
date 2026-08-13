@@ -5,6 +5,13 @@ import { patchGlobalFetch, wrapModel } from "./utils.js"
 
 export const DEFAULT_BASE_URL = "https://gateway.ai.cloudflare.com/v1/compat"
 
+function resolveBaseURL(): string {
+  if (typeof process !== "undefined" && process.env?.CLOUDFLARE_AIG_BASE_URL) {
+    return process.env.CLOUDFLARE_AIG_BASE_URL
+  }
+  return DEFAULT_BASE_URL
+}
+
 export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
   Effect.gen(function* () {
     patchGlobalFetch()
@@ -13,7 +20,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
       yield* ctx.catalog.transform(({ provider }) => {
         provider.update("cloudflare-ai-gateway-byok", (p) => {
           if (p.api?.type === "aisdk" && !p.api.url) {
-            p.api.url = DEFAULT_BASE_URL
+            p.api.url = resolveBaseURL()
           }
         })
       })
@@ -23,7 +30,8 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
       Effect.gen(function* () {
         if (evt.package !== "@yohi/cloudflare-ai-gateway-byok") return
         const customBaseURL = evt.options.baseURL
-        evt.options.baseURL = customBaseURL ?? DEFAULT_BASE_URL
+        const effectiveBaseURL = resolveBaseURL()
+        evt.options.baseURL = customBaseURL ?? effectiveBaseURL
 
         if (customBaseURL !== undefined) return
 
@@ -62,7 +70,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
         })
 
         const unified = createUnified({
-          baseURL: DEFAULT_BASE_URL,
+          baseURL: resolveBaseURL(),
         })
         const google = createGoogleGenerativeAI()
         const anthropic = createAnthropic()
@@ -113,4 +121,3 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
       })
     )
   })
-

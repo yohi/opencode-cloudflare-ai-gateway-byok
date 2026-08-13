@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { withMockGateway } from "./setup.ts"
+import { Effect } from "effect"
+import type { LanguageModelV3 } from "@ai-sdk/provider"
+import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
+import type { ModelV2Info } from "@opencode-ai/sdk/v2/types"
+import { CloudflareAIGatewayBYOK } from "../../src/cloudflare-ai-gateway-byok.js"
+import { createMockPluginContext, type LanguageEvent, type SdkEvent } from "../plugin-context.js"
+import { clearEnv, setE2EEnv, withMockGateway } from "./setup.js"
+
+const modelStub = {
+  providerID: "cloudflare-ai-gateway-byok",
+  api: { id: "openai/gpt-4o" },
+} as unknown as ModelV2Info
 
 describe("e2e setup", () => {
   test("withMockGateway starts and stops a server", async () => {
@@ -14,5 +25,71 @@ describe("e2e setup", () => {
       expect(res.status).toBe(200)
     })
     expect(capturedUrl).toContain("http://127.0.0.1:")
+  })
+})
+
+describe("E2E basic flow", () => {
+  test("basic flow sends a request to the mock gateway and receives a response", async () => {
+    const restoreEnv = clearEnv()
+    try {
+      await withMockGateway(async (gateway) => {
+        const restoreE2EEnv = setE2EEnv(gateway, {
+          CLOUDFLARE_ACCOUNT_ID: "test-account",
+          CLOUDFLARE_GATEWAY_ID: "test-gateway",
+          CLOUDFLARE_API_TOKEN: "test-token",
+        })
+
+        try {
+          const ctx = createMockPluginContext()
+          await Effect.runPromise(
+            Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as PluginContext)),
+          )
+
+          const sdkEvent: SdkEvent = {
+            package: "@yohi/cloudflare-ai-gateway-byok",
+            options: {
+              accountId: "opt-account",
+              gatewayId: "opt-gateway",
+              apiKey: "opt-key",
+            },
+            model: modelStub,
+          }
+          const sdkResult = ctx.runSdk(sdkEvent)
+          if (sdkResult) await Effect.runPromise(sdkResult)
+          expect(sdkEvent.sdk).toBeDefined()
+
+          const languageEvent: LanguageEvent = {
+            model: modelStub,
+            sdk: sdkEvent.sdk,
+            options: {},
+          }
+          const languageResult = ctx.runLanguage(languageEvent)
+          if (languageResult) await Effect.runPromise(languageResult)
+          const languageModel: LanguageModelV3 | undefined = languageEvent.language
+          expect(languageModel).toBeDefined()
+          if (languageModel === undefined) return
+
+          const response = await languageModel.doGenerate({
+            prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+          })
+          expect(response.content).toContainEqual({
+            type: "text",
+            text: "Hello from mock",
+            providerMetadata: undefined,
+          })
+
+          expect(gateway.requests).toHaveLength(1)
+          expect(gateway.requests[0]?.accountId).toBe("test-account")
+          expect(gateway.requests[0]?.gatewayId).toBe("test-gateway")
+          expect(gateway.requests[0]?.provider).toBe("openai")
+          expect(gateway.requests[0]?.headers["cf-aig-authorization"]).toBe("Bearer test-token")
+          expect(gateway.requests[0]?.body).toMatchObject({ model: "gpt-4o" })
+        } finally {
+          restoreE2EEnv()
+        }
+      })
+    } finally {
+      restoreEnv()
+    }
   })
 })

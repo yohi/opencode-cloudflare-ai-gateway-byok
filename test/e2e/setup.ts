@@ -1,4 +1,4 @@
-import { startMockGateway, stopMockGateway, type MockGateway } from "./mock-gateway.ts"
+import { startMockGateway, stopMockGateway, type MockGateway } from "./mock-gateway.js"
 
 const ENV_KEYS = [
   "CLOUDFLARE_ACCOUNT_ID",

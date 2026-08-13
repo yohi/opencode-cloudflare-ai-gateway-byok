@@ -27,13 +27,14 @@ export function clearEnv(): () => void {
 
 export function setE2EEnv(
   gateway: MockGateway,
-  values: Record<string, string>,
+  values: Record<string, string> = {},
 ): () => void {
   const original: Record<string, string | undefined> = {}
   for (const [key, value] of Object.entries(values)) {
     original[key] = process.env[key]
     process.env[key] = value
   }
+  original.CLOUDFLARE_AIG_BASE_URL = process.env.CLOUDFLARE_AIG_BASE_URL
   process.env.CLOUDFLARE_AIG_BASE_URL = gateway.url
   return () => {
     for (const [key, value] of Object.entries(original)) {
@@ -43,7 +44,12 @@ export function setE2EEnv(
         process.env[key] = value
       }
     }
-    delete process.env.CLOUDFLARE_AIG_BASE_URL
+    const baseUrl = original.CLOUDFLARE_AIG_BASE_URL
+    if (baseUrl === undefined) {
+      delete process.env.CLOUDFLARE_AIG_BASE_URL
+    } else {
+      process.env.CLOUDFLARE_AIG_BASE_URL = baseUrl
+    }
   }
 }
 

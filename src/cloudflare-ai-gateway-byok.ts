@@ -1,9 +1,65 @@
 import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
-import { patchGlobalFetch, wrapModel } from "./utils.js"
+import { normalizeModelCallOptions, patchGlobalFetch, wrapModel } from "./utils.js"
 
 export const DEFAULT_BASE_URL = "https://gateway.ai.cloudflare.com/v1/compat"
+
+export type CustomOpenAIModel = Record<string, unknown> & {
+  doGenerate: (...args: never[]) => unknown
+  doStream: (...args: never[]) => unknown
+}
+
+export function createCustomOpenAIModel(
+  createOpenAI: (options?: unknown) => unknown,
+  accountId: string,
+  gatewayId: string,
+  apiKey: string,
+  customPath: string,
+  modelID: string,
+): CustomOpenAIModel {
+  const provider = createOpenAI({
+    baseURL: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${customPath}/v1`,
+    apiKey: "CF_TEMP_TOKEN",
+    headers: {
+      "cf-aig-authorization": `Bearer ${apiKey}`,
+      "cf-aig-collect-log-payload": "false",
+      "cf-aig-max-attempts": "1",
+      "cf-aig-skip-cache": "true",
+    },
+  }) as {
+    chat(modelID: string): CustomOpenAIModel
+    responses(modelID: string): CustomOpenAIModel
+  }
+  const chatModel = provider.chat(modelID)
+  const responsesModel = provider.responses(modelID)
+  const selectModel = (options: Record<string, unknown>): CustomOpenAIModel => {
+    if (Array.isArray(options.tools) && options.tools.length > 0) return responsesModel
+    return chatModel
+  }
+  const callModel = (method: "doGenerate" | "doStream", options: Record<string, unknown>, args: unknown[]) => {
+    const model = selectModel(options)
+    normalizeModelCallOptions(options, model === responsesModel ? "responses" : "chat")
+    return Reflect.apply(model[method], model, [options, ...args])
+  }
+  return {
+    __byokResponseAware: true,
+    ...chatModel,
+    doGenerate(options: Record<string, unknown>, ...args: unknown[]) {
+      return callModel("doGenerate", options, args)
+    },
+    doStream(options: Record<string, unknown>, ...args: unknown[]) {
+      return callModel("doStream", options, args)
+    },
+  }
+}
+
+function resolveBaseURL(): string {
+  if (typeof process !== "undefined" && process.env?.CLOUDFLARE_AIG_BASE_URL) {
+    return process.env.CLOUDFLARE_AIG_BASE_URL
+  }
+  return DEFAULT_BASE_URL
+}
 
 export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
   Effect.gen(function* () {
@@ -13,7 +69,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
       yield* ctx.catalog.transform(({ provider }) => {
         provider.update("cloudflare-ai-gateway-byok", (p) => {
           if (p.api?.type === "aisdk" && !p.api.url) {
-            p.api.url = DEFAULT_BASE_URL
+            p.api.url = resolveBaseURL()
           }
         })
       })
@@ -23,7 +79,8 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
       Effect.gen(function* () {
         if (evt.package !== "@yohi/cloudflare-ai-gateway-byok") return
         const customBaseURL = evt.options.baseURL
-        evt.options.baseURL = customBaseURL ?? DEFAULT_BASE_URL
+        const effectiveBaseURL = resolveBaseURL()
+        evt.options.baseURL = customBaseURL ?? effectiveBaseURL
 
         if (customBaseURL !== undefined) return
 
@@ -62,12 +119,11 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
         })
 
         const unified = createUnified({
-          baseURL: DEFAULT_BASE_URL,
+          baseURL: resolveBaseURL(),
         })
         const google = createGoogleGenerativeAI()
         const anthropic = createAnthropic()
         const openai = createOpenAI()
-
         function resolveModel(modelID: string) {
           const lower = modelID.toLowerCase()
           if (lower.startsWith("google/") || lower.startsWith("google-ai-studio/") || lower.includes("gemini")) {
@@ -78,9 +134,20 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
             const cleanID = modelID.replace(/^anthropic\//i, "")
             return gateway(anthropic(cleanID))
           }
-          if (lower.startsWith("openai/") || lower.includes("gpt") || lower.startsWith("o1") || lower.startsWith("o3")) {
+          if (lower.startsWith("openai/") || lower.startsWith("o1") || lower.startsWith("o3")) {
             const cleanID = modelID.replace(/^openai\//i, "")
             return gateway(openai.chat(cleanID))
+          }
+          const customPathMatch = /^([^/]+)\/(.+)$/.exec(modelID)
+          if (customPathMatch && !lower.startsWith("dynamic/")) {
+            return wrapModel(createCustomOpenAIModel(
+              createOpenAI as unknown as (options?: unknown) => unknown,
+              accountId,
+              gatewayId,
+              apiKey,
+              customPathMatch[1],
+              customPathMatch[2],
+            ))
           }
           return gateway(unified(modelID))
         }
@@ -113,4 +180,3 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
       })
     )
   })
-

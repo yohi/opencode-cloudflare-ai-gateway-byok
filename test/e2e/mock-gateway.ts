@@ -2,6 +2,7 @@ export interface CapturedRequest {
   accountId: string
   gatewayId: string
   provider: string
+  path: string
   headers: Record<string, string>
   body: unknown
 }
@@ -60,6 +61,7 @@ export async function startMockGateway(options?: MockGatewayOptions): Promise<Mo
         accountId,
         gatewayId,
         provider,
+        path: url.pathname,
         headers: Object.fromEntries(req.headers.entries()),
         body: googleModelMatch?.[1] && query && typeof query === "object"
           ? { ...query, model: decodeURIComponent(googleModelMatch[1]) }

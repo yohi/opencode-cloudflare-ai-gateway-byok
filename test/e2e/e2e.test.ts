@@ -345,6 +345,7 @@ describe("E2E provider routing", () => {
       const request = await runModel(gateway, "custom/custom-model")
 
       expect(request.provider).toBe("custom")
+      expect(request.path).toBe("/v1/test-account/test-gateway/custom/v1/chat/completions")
       expect(request.body).toMatchObject({ model: "custom-model" })
     })
   })
@@ -356,6 +357,7 @@ describe("E2E provider routing", () => {
       })
 
       expect(request.provider).toBe("custom")
+      expect(request.path).toBe("/v1/test-account/test-gateway/custom/v1/responses")
       expect(request.body).toMatchObject({
         model: "custom-model",
         tools: [{ type: "function", name: "test" }],

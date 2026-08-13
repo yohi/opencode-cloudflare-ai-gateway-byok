@@ -33,19 +33,21 @@ export async function startMockGateway(options?: MockGatewayOptions): Promise<Mo
       const url = new URL(req.url)
       const directMatch = /^\/accounts\/([^/]+)\/ai\/gateway\/([^/]+)\/([^/]+)$/.exec(url.pathname)
       const universalMatch = /^\/v1\/([^/]+)\/([^/]+)$/.exec(url.pathname)
-      if ((!directMatch && !universalMatch) || req.method !== "POST") {
+      const customMatch = /^\/v1\/([^/]+)\/([^/]+)\/([^/]+)\/v1\/(chat\/completions|responses)$/.exec(url.pathname)
+      if ((!directMatch && !universalMatch && !customMatch) || req.method !== "POST") {
         return new Response("Not Found", { status: 404 })
       }
 
       const body = await req.json().catch(() => undefined)
       const universalRequest = Array.isArray(body) ? body[0] : undefined
-      const accountId = directMatch?.[1] ?? universalMatch?.[1] ?? ""
-      const gatewayId = directMatch?.[2] ?? universalMatch?.[2] ?? ""
-      const wireProvider = directMatch?.[3] ??
+      const accountId = directMatch?.[1] ?? universalMatch?.[1] ?? customMatch?.[1] ?? ""
+      const gatewayId = directMatch?.[2] ?? universalMatch?.[2] ?? customMatch?.[2] ?? ""
+      const wireProvider = directMatch?.[3] ?? customMatch?.[3] ??
         (universalRequest && typeof universalRequest === "object" && "provider" in universalRequest
           ? String(universalRequest.provider)
           : "")
       const provider = wireProvider === "google-ai-studio" ? "google" : wireProvider
+      const customProvider = customMatch !== undefined && !["openai", "anthropic", "google"].includes(provider)
       const query = universalRequest && typeof universalRequest === "object" && "query" in universalRequest
         ? universalRequest.query
         : body
@@ -65,7 +67,7 @@ export async function startMockGateway(options?: MockGatewayOptions): Promise<Mo
       })
 
       const status = statuses.get(provider) ?? options?.defaultStatus ?? 200
-      const responseBody = responses.get(provider) ?? defaultResponse(provider)
+      const responseBody = responses.get(provider) ?? defaultResponse(provider, customProvider, customMatch?.[4] === "responses")
       return Response.json(responseBody, { status, headers: { "cf-aig-step": "0" } })
     },
   })
@@ -91,8 +93,21 @@ export async function stopMockGateway(gateway: MockGateway): Promise<void> {
   servers.delete(gateway)
 }
 
-function defaultResponse(provider: string): unknown {
-  if (provider === "openai") {
+function defaultResponse(provider: string, customProvider = false, responsesApi = false): unknown {
+  if (provider === "openai" || customProvider) {
+    if (responsesApi) {
+      return {
+        id: "resp-mock",
+        object: "response",
+        model: "custom-model",
+        output: [{
+          id: "msg-mock",
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Hello from mock", annotations: [] }],
+        }],
+      }
+    }
     return {
       id: "chatcmpl-mock",
       object: "chat.completion",

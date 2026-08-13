@@ -66,11 +66,13 @@ export function normalizeModelCallOptions(record: Record<string, unknown>, api: 
   const isOpenAI = modelName.includes("openai") || modelName.includes("gpt") || modelName.startsWith("o1") || modelName.startsWith("o3")
   const reasoningEffort = Array.isArray(record.tools) && record.tools.length > 0
     ? "none"
-    : record.reasoningEffort ?? record.reasoning_effort
+    : record.reasoningEffort ?? record.reasoning_effort ?? (isRecord(record.reasoning) ? record.reasoning.effort : undefined)
 
   if (api === "responses") {
-    const reasoning = isRecord(record.reasoning) ? record.reasoning : {}
-    record.reasoning = { ...reasoning, effort: reasoningEffort }
+    if (reasoningEffort !== undefined) {
+      const reasoning = isRecord(record.reasoning) ? record.reasoning : {}
+      record.reasoning = { ...reasoning, effort: reasoningEffort }
+    }
   } else if (isOpenAI && reasoningEffort !== undefined) {
     const providerOptions = isRecord(record.providerOptions) ? record.providerOptions : {}
     const openaiOptions = isRecord(providerOptions.openai) ? providerOptions.openai : {}

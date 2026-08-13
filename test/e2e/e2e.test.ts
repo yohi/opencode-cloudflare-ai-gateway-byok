@@ -247,9 +247,15 @@ describe("E2E provider routing", () => {
     await runInChild("routes openai/gpt-4o to openai provider")
     await runInChild("routes anthropic/claude-sonnet-4 to anthropic provider")
     await runInChild("routes google/gemini-1.5-flash to google provider")
+    await runInChild("routes Custom Provider without tools through Chat Completions")
+    await runInChild("routes Custom Provider with tools through Responses API")
   })
 
-  async function runModel(gateway: MockGateway, modelID: string): Promise<CapturedRequest> {
+  async function runModel(
+    gateway: MockGateway,
+    modelID: string,
+    options: Record<string, unknown> = {},
+  ): Promise<CapturedRequest> {
     const restoreEnv = clearEnv()
     const restoreE2EEnv = setE2EEnv(gateway, {
       CLOUDFLARE_ACCOUNT_ID: "test-account",
@@ -289,6 +295,7 @@ describe("E2E provider routing", () => {
       }
 
       await languageModel.doGenerate({
+        ...options,
         prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
       })
       const request = gateway.requests[0]
@@ -330,6 +337,29 @@ describe("E2E provider routing", () => {
 
       expect(request.provider).toBe("google")
       expect(request.body).toMatchObject({ model: "gemini-1.5-flash" })
+    })
+  })
+
+  test.skipIf(!isChildProcess)("routes Custom Provider without tools through Chat Completions", async () => {
+    await withMockGateway(async (gateway) => {
+      const request = await runModel(gateway, "custom/custom-model")
+
+      expect(request.provider).toBe("custom")
+      expect(request.body).toMatchObject({ model: "custom-model" })
+    })
+  })
+
+  test.skipIf(!isChildProcess)("routes Custom Provider with tools through Responses API", async () => {
+    await withMockGateway(async (gateway) => {
+      const request = await runModel(gateway, "custom/custom-model", {
+        tools: [{ type: "function", name: "test", inputSchema: {} }],
+      })
+
+      expect(request.provider).toBe("custom")
+      expect(request.body).toMatchObject({
+        model: "custom-model",
+        tools: [{ type: "function", name: "test" }],
+      })
     })
   })
 })

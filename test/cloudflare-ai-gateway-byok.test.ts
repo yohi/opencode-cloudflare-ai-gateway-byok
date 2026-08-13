@@ -2,7 +2,7 @@ import { describe, expect, test, afterEach, mock } from "bun:test"
 import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions, stringOption } from "../src/env.js"
 import { CloudflareAIGatewayBYOK } from "../src/cloudflare-ai-gateway-byok.js"
-import { cleanParams } from "../src/utils.js"
+import { cleanParams, normalizeModelCallOptions } from "../src/utils.js"
 import { createMockPluginContext, type LanguageEvent, type SdkEvent } from "./plugin-context.js"
 
 function withEnv(entries: Record<string, string | undefined>): () => void {
@@ -35,6 +35,19 @@ describe("stringOption", () => {
     expect(stringOption({ key: 123 }, "key")).toBeUndefined()
     expect(stringOption({ key: undefined }, "key")).toBeUndefined()
     expect(stringOption({}, "key")).toBeUndefined()
+  })
+})
+
+describe("normalizeModelCallOptions", () => {
+  test("preserves native Responses reasoning effort when legacy fields are absent", () => {
+    const record: Record<string, unknown> = {
+      model: "gpt-4o",
+      reasoning: { effort: "medium", summary: "auto" },
+    }
+
+    normalizeModelCallOptions(record, "responses")
+
+    expect(record.reasoning).toEqual({ effort: "medium", summary: "auto" })
   })
 })
 

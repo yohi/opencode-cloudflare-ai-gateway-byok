@@ -174,7 +174,7 @@ describe("E2E auth fallback", () => {
           await sendOpenAIRequest({ apiKey: "opt-key" })
 
           expect(gateway.requests).toHaveLength(1)
-          expect(gateway.requests[0]?.headers.authorization).toBe("Bearer cf-aig-token")
+          expect(gateway.requests[0]?.headers["cf-aig-authorization"]).toBe("Bearer cf-aig-token")
         } finally {
           restoreE2EEnv()
         }
@@ -205,7 +205,7 @@ describe("E2E auth fallback", () => {
           })
 
           expect(gateway.requests).toHaveLength(1)
-          expect(gateway.requests[0]?.headers.authorization).toBe("Bearer opt-api-key")
+          expect(gateway.requests[0]?.headers["cf-aig-authorization"]).toBe("Bearer opt-api-key")
         } finally {
           restoreE2EEnv()
         }

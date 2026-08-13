@@ -45,15 +45,11 @@ export async function startMockGateway(options?: MockGatewayOptions): Promise<Mo
         (universalRequest && typeof universalRequest === "object" && "provider" in universalRequest
           ? String(universalRequest.provider)
           : "")
-      const headers = Object.fromEntries(req.headers.entries())
-      if (headers["cf-aig-authorization"] !== undefined) {
-        headers.authorization = headers["cf-aig-authorization"]
-      }
       captured.push({
         accountId,
         gatewayId,
         provider,
-        headers,
+        headers: Object.fromEntries(req.headers.entries()),
         body: universalRequest && typeof universalRequest === "object" && "query" in universalRequest
           ? universalRequest.query
           : body,

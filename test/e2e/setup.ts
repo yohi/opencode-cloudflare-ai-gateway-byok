@@ -30,11 +30,11 @@ export function setE2EEnv(
   values: Record<string, string> = {},
 ): () => void {
   const original: Record<string, string | undefined> = {}
+  original.CLOUDFLARE_AIG_BASE_URL = process.env.CLOUDFLARE_AIG_BASE_URL
   for (const [key, value] of Object.entries(values)) {
     original[key] = process.env[key]
     process.env[key] = value
   }
-  original.CLOUDFLARE_AIG_BASE_URL = process.env.CLOUDFLARE_AIG_BASE_URL
   process.env.CLOUDFLARE_AIG_BASE_URL = gateway.url
   return () => {
     for (const [key, value] of Object.entries(original)) {

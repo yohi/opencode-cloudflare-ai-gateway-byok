@@ -14,6 +14,7 @@ const modelStub = {
 
 const BASIC_FLOW_CHILD = "CLOUDFLARE_AIG_E2E_BASIC_FLOW_CHILD"
 const AUTH_FALLBACK_CHILD = "CLOUDFLARE_AIG_E2E_AUTH_FALLBACK_CHILD"
+const ENV_RESOLUTION_CHILD = "CLOUDFLARE_AIG_E2E_ENV_RESOLUTION_CHILD"
 
 async function runAuthFallbackTestInChild(testName: string): Promise<boolean> {
   if (process.env[AUTH_FALLBACK_CHILD] === "1") return false
@@ -206,6 +207,51 @@ describe("E2E auth fallback", () => {
 
           expect(gateway.requests).toHaveLength(1)
           expect(gateway.requests[0]?.headers["cf-aig-authorization"]).toBe("Bearer opt-api-key")
+        } finally {
+          restoreE2EEnv()
+        }
+      })
+    } finally {
+      restoreEnv()
+    }
+  })
+})
+
+describe("E2E env resolution", () => {
+  test("resolves {env:...} placeholders in options", async () => {
+    if (process.env[ENV_RESOLUTION_CHILD] !== "1") {
+      const child = Bun.spawn(
+        [process.execPath, "test", import.meta.path, "-t", "env resolution"],
+        {
+          env: { ...process.env, [ENV_RESOLUTION_CHILD]: "1" },
+          stdout: "inherit",
+          stderr: "inherit",
+        },
+      )
+      expect(await child.exited).toBe(0)
+      return
+    }
+
+    const restoreEnv = clearEnv()
+    try {
+      await withMockGateway(async (gateway) => {
+        const restoreE2EEnv = setE2EEnv(gateway, {
+          E2E_ACCOUNT_ID: "test-account",
+          E2E_GATEWAY_ID: "test-gateway",
+          E2E_API_TOKEN: "test-token",
+        })
+
+        try {
+          await sendOpenAIRequest({
+            accountId: "{env:E2E_ACCOUNT_ID}",
+            gatewayId: "{env:E2E_GATEWAY_ID}",
+            apiKey: "{env:E2E_API_TOKEN}",
+          })
+
+          expect(gateway.requests).toHaveLength(1)
+          expect(gateway.requests[0]?.accountId).toBe("test-account")
+          expect(gateway.requests[0]?.gatewayId).toBe("test-gateway")
+          expect(gateway.requests[0]?.headers["cf-aig-authorization"]).toBe("Bearer test-token")
         } finally {
           restoreE2EEnv()
         }

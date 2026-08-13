@@ -12,6 +12,8 @@ const modelStub = {
   api: { id: "openai/gpt-4o" },
 } as unknown as ModelV2Info
 
+const BASIC_FLOW_CHILD = "CLOUDFLARE_AIG_E2E_BASIC_FLOW_CHILD"
+
 describe("e2e setup", () => {
   test("withMockGateway starts and stops a server", async () => {
     let capturedUrl = ""
@@ -30,6 +32,19 @@ describe("e2e setup", () => {
 
 describe("E2E basic flow", () => {
   test("basic flow sends a request to the mock gateway and receives a response", async () => {
+    if (process.env[BASIC_FLOW_CHILD] !== "1") {
+      const child = Bun.spawn(
+        [process.execPath, "test", import.meta.path, "-t", "basic flow"],
+        {
+          env: { ...process.env, [BASIC_FLOW_CHILD]: "1" },
+          stdout: "inherit",
+          stderr: "inherit",
+        },
+      )
+      expect(await child.exited).toBe(0)
+      return
+    }
+
     const restoreEnv = clearEnv()
     try {
       await withMockGateway(async (gateway) => {

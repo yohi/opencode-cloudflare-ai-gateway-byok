@@ -39,9 +39,48 @@ function sanitizeMaxTokens(record: Record<string, unknown>): void {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function normalizeModelCallOptions(record: Record<string, unknown>): void {
+  const maxOutputTokens = record.maxTokens ?? record.max_tokens ?? record.maxOutputTokens ?? record.max_completion_tokens
+  if (maxOutputTokens !== undefined) {
+    record.maxOutputTokens = maxOutputTokens
+    delete record.maxTokens
+    delete record.max_tokens
+    delete record.max_completion_tokens
+  }
+
+  const modelName = typeof record.model === "string" ? record.model.toLowerCase() : ""
+  const isOpenAI = modelName.includes("openai") || modelName.includes("gpt") || modelName.startsWith("o1") || modelName.startsWith("o3")
+  const reasoningEffort = Array.isArray(record.tools) && record.tools.length > 0
+    ? "none"
+    : record.reasoningEffort ?? record.reasoning_effort
+
+  if (isOpenAI && reasoningEffort !== undefined) {
+    const providerOptions = isRecord(record.providerOptions) ? record.providerOptions : {}
+    const openaiOptions = isRecord(providerOptions.openai) ? providerOptions.openai : {}
+    record.providerOptions = {
+      ...providerOptions,
+      openai: { ...openaiOptions, reasoningEffort },
+    }
+  }
+  delete record.reasoningEffort
+  delete record.reasoning_effort
+}
+
 export function cleanParams(obj: unknown): void {
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return
-  const record = obj as Record<string, unknown>
+  if (Array.isArray(obj)) {
+    for (const entry of obj) {
+      if (isRecord(entry) && isRecord(entry.query)) {
+        cleanParams(entry.query)
+      }
+    }
+    return
+  }
+  if (!isRecord(obj)) return
+  const record = obj
 
   sanitizeReasoningEffort(record)
   sanitizeMaxTokens(record)
@@ -61,7 +100,7 @@ export function wrapModel<T>(model: T): T {
       const fn = orig as (...args: unknown[]) => unknown
       obj[method] = (options: Record<string, unknown>, ...args: unknown[]) => {
         if (options && typeof options === "object") {
-          cleanParams(options)
+          normalizeModelCallOptions(options)
         }
         return Reflect.apply(fn, obj, [options, ...args])
       }

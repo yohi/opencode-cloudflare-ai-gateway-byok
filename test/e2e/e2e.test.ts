@@ -17,6 +17,7 @@ const BASIC_FLOW_CHILD = "CLOUDFLARE_AIG_E2E_BASIC_FLOW_CHILD"
 const AUTH_FALLBACK_CHILD = "CLOUDFLARE_AIG_E2E_AUTH_FALLBACK_CHILD"
 const ENV_RESOLUTION_CHILD = "CLOUDFLARE_AIG_E2E_ENV_RESOLUTION_CHILD"
 const PROVIDER_ROUTING_CHILD = "CLOUDFLARE_AIG_E2E_PROVIDER_ROUTING_CHILD"
+const PARAMETER_NORMALIZATION_CHILD = "CLOUDFLARE_AIG_E2E_PARAMETER_NORMALIZATION_CHILD"
 
 async function runAuthFallbackTestInChild(testName: string): Promise<boolean> {
   if (process.env[AUTH_FALLBACK_CHILD] === "1") return false
@@ -40,6 +41,21 @@ async function runProviderRoutingTestInChild(testName: string): Promise<boolean>
     [process.execPath, "test", import.meta.path, "-t", testName],
     {
       env: { ...process.env, [PROVIDER_ROUTING_CHILD]: "1" },
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  )
+  expect(await child.exited).toBe(0)
+  return true
+}
+
+async function runParameterNormalizationTestInChild(testName: string): Promise<boolean> {
+  if (process.env[PARAMETER_NORMALIZATION_CHILD] === "1") return false
+
+  const child = Bun.spawn(
+    [process.execPath, "test", import.meta.path, "-t", testName],
+    {
+      env: { ...process.env, [PARAMETER_NORMALIZATION_CHILD]: "1" },
       stdout: "inherit",
       stderr: "inherit",
     },
@@ -369,6 +385,17 @@ describe("E2E provider routing", () => {
 })
 
 describe("E2E parameter normalization", () => {
+  type GatewaySdk = {
+    languageModel(modelID: string): LanguageModelV3
+  }
+
+  function isGatewaySdk(value: unknown): value is GatewaySdk {
+    if ((typeof value !== "object" || value === null) && typeof value !== "function") {
+      return false
+    }
+    return "languageModel" in value && typeof value.languageModel === "function"
+  }
+
   async function captureOpenAIRequest(
     gateway: MockGateway,
     options: Record<string, unknown>,
@@ -386,19 +413,23 @@ describe("E2E parameter normalization", () => {
         Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as PluginContext)),
       )
 
-      const languageModel = {
-        async doGenerate(body: Record<string, unknown>): Promise<void> {
-          await fetch(
-            "https://gateway.ai.cloudflare.com/accounts/test-account/ai/gateway/test-gateway/openai",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(body),
-            },
-          )
-        },
+      const sdkEvent: SdkEvent = {
+        package: "@yohi/cloudflare-ai-gateway-byok",
+        options: {},
+        model: modelStub,
       }
-      await languageModel.doGenerate(options)
+      const sdkResult = ctx.runSdk(sdkEvent)
+      if (sdkResult) await Effect.runPromise(sdkResult)
+      expect(isGatewaySdk(sdkEvent.sdk)).toBe(true)
+      if (!isGatewaySdk(sdkEvent.sdk)) {
+        throw new Error("Expected SDK to expose languageModel")
+      }
+
+      const languageModel = sdkEvent.sdk.languageModel("openai/gpt-4o")
+      await languageModel.doGenerate({
+        ...options,
+        prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      })
 
       const request = gateway.requests[0]
       expect(request).toBeDefined()
@@ -413,12 +444,13 @@ describe("E2E parameter normalization", () => {
   }
 
   test("normalizes reasoningEffort to reasoning_effort = none when tools are present", async () => {
+    if (await runParameterNormalizationTestInChild("normalizes reasoningEffort to reasoning_effort = none when tools are present")) return
+
     await withMockGateway(async (gateway) => {
       const body = await captureOpenAIRequest(gateway, {
         model: "openai/gpt-4o",
         reasoningEffort: "high",
-        tools: [{ type: "function", function: { name: "test" } }],
-        messages: [{ role: "user", content: "hi" }],
+        tools: [{ type: "function", name: "test", inputSchema: {} }],
       })
 
       expect(body).not.toHaveProperty("reasoningEffort")
@@ -427,11 +459,12 @@ describe("E2E parameter normalization", () => {
   })
 
   test("converts maxTokens to max_completion_tokens", async () => {
+    if (await runParameterNormalizationTestInChild("converts maxTokens to max_completion_tokens")) return
+
     await withMockGateway(async (gateway) => {
       const body = await captureOpenAIRequest(gateway, {
         model: "openai/gpt-4o",
         maxTokens: 250,
-        messages: [{ role: "user", content: "hi" }],
       })
 
       expect(body).not.toHaveProperty("maxTokens")

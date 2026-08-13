@@ -251,7 +251,7 @@ describe("patchGlobalFetch & utils", () => {
     delete globalThis.__byok_fetch_patched__
   })
 
-  test("wrapModel transforms maxTokens to max_completion_tokens and deletes maxTokens", async () => {
+  test("wrapModel transforms maxTokens to maxOutputTokens and deletes maxTokens", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -263,9 +263,9 @@ describe("patchGlobalFetch & utils", () => {
     const wrapped = wrapModel(mockModel)
     wrapped.doGenerate({ maxTokens: 100 })
 
-    expect(receivedOptions?.max_completion_tokens).toBe(100)
+    expect(receivedOptions?.maxOutputTokens).toBe(100)
     expect(receivedOptions?.maxTokens).toBeUndefined()
-    expect(receivedOptions?.maxOutputTokens).toBeUndefined()
+    expect(receivedOptions?.max_completion_tokens).toBeUndefined()
   })
 
   test("cleanParams converts reasoningEffort to reasoning_effort = 'none' when tools are present for OpenAI models", async () => {
@@ -293,7 +293,7 @@ describe("patchGlobalFetch & utils", () => {
     expect(body.reasoning_effort).toBeUndefined()
   })
 
-  test("wrapModel sets reasoning_effort = 'none' when tools are present for OpenAI models", async () => {
+  test("wrapModel sets providerOptions.openai.reasoningEffort = 'none' when tools are present for OpenAI models", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -306,7 +306,10 @@ describe("patchGlobalFetch & utils", () => {
     wrapped.doGenerate({ model: "openai/gpt-4o", tools: [{ type: "function" }], reasoningEffort: "medium" })
 
     expect(receivedOptions?.reasoningEffort).toBeUndefined()
-    expect(receivedOptions?.reasoning_effort).toBe("none")
+    expect(receivedOptions?.reasoning_effort).toBeUndefined()
+    expect(receivedOptions?.providerOptions).toEqual({
+      openai: { reasoningEffort: "none" },
+    })
   })
 
   test("cleanParams converts max_tokens to max_completion_tokens, deleting max_tokens and maxOutputTokens", async () => {

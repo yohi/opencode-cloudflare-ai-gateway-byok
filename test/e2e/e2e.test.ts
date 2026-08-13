@@ -356,3 +356,75 @@ describe("E2E provider routing", () => {
     })
   })
 })
+
+describe("E2E parameter normalization", () => {
+  async function captureOpenAIRequest(
+    gateway: MockGateway,
+    options: Record<string, unknown>,
+  ): Promise<unknown> {
+    const restoreEnv = clearEnv()
+    const restoreE2EEnv = setE2EEnv(gateway, {
+      CLOUDFLARE_ACCOUNT_ID: "test-account",
+      CLOUDFLARE_GATEWAY_ID: "test-gateway",
+      CLOUDFLARE_API_TOKEN: "test-token",
+    })
+
+    try {
+      const ctx = createMockPluginContext()
+      await Effect.runPromise(
+        Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as PluginContext)),
+      )
+
+      const languageModel = {
+        async doGenerate(body: Record<string, unknown>): Promise<void> {
+          await fetch(
+            "https://gateway.ai.cloudflare.com/accounts/test-account/ai/gateway/test-gateway/openai",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            },
+          )
+        },
+      }
+      await languageModel.doGenerate(options)
+
+      const request = gateway.requests[0]
+      expect(request).toBeDefined()
+      if (request === undefined) {
+        throw new Error("Expected the mock gateway to capture a request")
+      }
+      return request.body
+    } finally {
+      restoreE2EEnv()
+      restoreEnv()
+    }
+  }
+
+  test("normalizes reasoningEffort to reasoning_effort = none when tools are present", async () => {
+    await withMockGateway(async (gateway) => {
+      const body = await captureOpenAIRequest(gateway, {
+        model: "openai/gpt-4o",
+        reasoningEffort: "high",
+        tools: [{ type: "function", function: { name: "test" } }],
+        messages: [{ role: "user", content: "hi" }],
+      })
+
+      expect(body).not.toHaveProperty("reasoningEffort")
+      expect(body).toHaveProperty("reasoning_effort", "none")
+    })
+  })
+
+  test("converts maxTokens to max_completion_tokens", async () => {
+    await withMockGateway(async (gateway) => {
+      const body = await captureOpenAIRequest(gateway, {
+        model: "openai/gpt-4o",
+        maxTokens: 250,
+        messages: [{ role: "user", content: "hi" }],
+      })
+
+      expect(body).not.toHaveProperty("maxTokens")
+      expect(body).toHaveProperty("max_completion_tokens", 250)
+    })
+  })
+})

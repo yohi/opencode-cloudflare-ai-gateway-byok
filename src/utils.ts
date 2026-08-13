@@ -167,6 +167,16 @@ export function patchGlobalFetch(): void {
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
       const urlStr = resolveUrlString(input, isRequest)
+      const baseURL = process.env.CLOUDFLARE_AIG_BASE_URL
+      const rewrittenURL =
+        baseURL && urlStr.startsWith("https://gateway.ai.cloudflare.com/")
+          ? `${baseURL}${new URL(urlStr).pathname}`
+          : undefined
+      const rewrittenInput = rewrittenURL === undefined
+        ? input
+        : isRequest
+          ? new Request(rewrittenURL, input as Request)
+          : rewrittenURL
 
       let hostname = ""
       try {
@@ -181,7 +191,7 @@ export function patchGlobalFetch(): void {
           try {
             const parsed = JSON.parse(bodyStr)
             cleanParams(parsed)
-            return await processFetchRequest(input, init, hostname, isRequest, parsed, originalFetch)
+            return await processFetchRequest(rewrittenInput, init, hostname, isRequest, parsed, originalFetch)
           } catch (error) {
             const msg = error instanceof Error ? error.message : String(error)
             console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
@@ -190,12 +200,11 @@ export function patchGlobalFetch(): void {
 
         const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
         cleanHeaders(headers, hostname)
-        return originalFetch(input, { ...init, headers })
+        return originalFetch(rewrittenInput, { ...init, headers })
       }
 
-      return originalFetch(input, init)
+      return originalFetch(rewrittenInput, init)
     },
     originalFetch,
   )
 }
-

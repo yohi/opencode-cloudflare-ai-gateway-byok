@@ -31,24 +31,33 @@ export async function startMockGateway(options?: MockGatewayOptions): Promise<Mo
     hostname: "127.0.0.1",
     async fetch(req: Request) {
       const url = new URL(req.url)
-      const match = /^\/accounts\/([^/]+)\/ai\/gateway\/([^/]+)\/([^/]+)$/.exec(url.pathname)
-      if (!match || req.method !== "POST") {
+      const directMatch = /^\/accounts\/([^/]+)\/ai\/gateway\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+      const universalMatch = /^\/v1\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+      if ((!directMatch && !universalMatch) || req.method !== "POST") {
         return new Response("Not Found", { status: 404 })
       }
 
-      const [, accountId, gatewayId, provider] = match
       const body = await req.json().catch(() => undefined)
+      const universalRequest = Array.isArray(body) ? body[0] : undefined
+      const accountId = directMatch?.[1] ?? universalMatch?.[1] ?? ""
+      const gatewayId = directMatch?.[2] ?? universalMatch?.[2] ?? ""
+      const provider = directMatch?.[3] ??
+        (universalRequest && typeof universalRequest === "object" && "provider" in universalRequest
+          ? String(universalRequest.provider)
+          : "")
       captured.push({
         accountId,
         gatewayId,
         provider,
         headers: Object.fromEntries(req.headers.entries()),
-        body,
+        body: universalRequest && typeof universalRequest === "object" && "query" in universalRequest
+          ? universalRequest.query
+          : body,
       })
 
       const status = statuses.get(provider) ?? options?.defaultStatus ?? 200
       const responseBody = responses.get(provider) ?? defaultResponse(provider)
-      return Response.json(responseBody, { status })
+      return Response.json(responseBody, { status, headers: { "cf-aig-step": "0" } })
     },
   })
 

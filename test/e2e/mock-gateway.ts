@@ -98,6 +98,7 @@ function defaultResponse(provider: string): unknown {
       role: "assistant",
       content: [{ type: "text", text: "Hello from mock" }],
       model: "claude-sonnet-4",
+      usage: { input_tokens: 1, output_tokens: 1 },
     }
   }
   return { ok: true }

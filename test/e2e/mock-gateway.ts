@@ -41,18 +41,27 @@ export async function startMockGateway(options?: MockGatewayOptions): Promise<Mo
       const universalRequest = Array.isArray(body) ? body[0] : undefined
       const accountId = directMatch?.[1] ?? universalMatch?.[1] ?? ""
       const gatewayId = directMatch?.[2] ?? universalMatch?.[2] ?? ""
-      const provider = directMatch?.[3] ??
+      const wireProvider = directMatch?.[3] ??
         (universalRequest && typeof universalRequest === "object" && "provider" in universalRequest
           ? String(universalRequest.provider)
           : "")
+      const provider = wireProvider === "google-ai-studio" ? "google" : wireProvider
+      const query = universalRequest && typeof universalRequest === "object" && "query" in universalRequest
+        ? universalRequest.query
+        : body
+      const googleModelMatch = provider === "google" && universalRequest &&
+          typeof universalRequest === "object" && "endpoint" in universalRequest &&
+          typeof universalRequest.endpoint === "string"
+        ? /\/models\/([^/:]+):/.exec(universalRequest.endpoint)
+        : undefined
       captured.push({
         accountId,
         gatewayId,
         provider,
         headers: Object.fromEntries(req.headers.entries()),
-        body: universalRequest && typeof universalRequest === "object" && "query" in universalRequest
-          ? universalRequest.query
-          : body,
+        body: googleModelMatch?.[1] && query && typeof query === "object"
+          ? { ...query, model: decodeURIComponent(googleModelMatch[1]) }
+          : query,
       })
 
       const status = statuses.get(provider) ?? options?.defaultStatus ?? 200
@@ -99,6 +108,20 @@ function defaultResponse(provider: string): unknown {
       content: [{ type: "text", text: "Hello from mock" }],
       model: "claude-sonnet-4",
       usage: { input_tokens: 1, output_tokens: 1 },
+    }
+  }
+  if (provider === "google") {
+    return {
+      candidates: [{
+        content: { role: "model", parts: [{ text: "Hello from mock" }] },
+        finishReason: "STOP",
+        index: 0,
+      }],
+      usageMetadata: {
+        promptTokenCount: 1,
+        candidatesTokenCount: 1,
+        totalTokenCount: 2,
+      },
     }
   }
   return { ok: true }

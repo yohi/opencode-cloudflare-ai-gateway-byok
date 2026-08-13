@@ -355,6 +355,17 @@ describe("E2E provider routing", () => {
       expect(request.body).toMatchObject({ model: "claude-sonnet-4" })
     })
   })
+
+  test("routes google/gemini-1.5-flash to google provider", async () => {
+    if (await runProviderRoutingTestInChild("routes google/gemini-1.5-flash to google provider")) return
+
+    await withMockGateway(async (gateway) => {
+      const request = await runModel(gateway, "google/gemini-1.5-flash")
+
+      expect(request.provider).toBe("google")
+      expect(request.body).toMatchObject({ model: "gemini-1.5-flash" })
+    })
+  })
 })
 
 describe("E2E parameter normalization", () => {

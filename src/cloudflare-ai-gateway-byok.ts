@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
-import { patchGlobalFetch, wrapModel } from "./utils.js"
+import { normalizeModelCallOptions, patchGlobalFetch, wrapModel } from "./utils.js"
 
 export const DEFAULT_BASE_URL = "https://gateway.ai.cloudflare.com/v1/compat"
 
@@ -75,6 +75,34 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
         const google = createGoogleGenerativeAI()
         const anthropic = createAnthropic()
         const openai = createOpenAI()
+        const customOpenAI = (customPath: string, modelID: string) => {
+          const provider = createOpenAI({
+            baseURL: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${customPath}/v1`,
+            apiKey: "CF_TEMP_TOKEN",
+            headers: {
+              "cf-aig-authorization": `Bearer ${apiKey}`,
+              "cf-aig-collect-log-payload": "false",
+              "cf-aig-max-attempts": "1",
+              "cf-aig-skip-cache": "true",
+            },
+          })
+          const chatModel = provider.chat(modelID) as Record<string, unknown>
+          const responsesModel = provider.responses(modelID) as Record<string, unknown>
+          return {
+            __byokResponseAware: true,
+            ...chatModel,
+            doGenerate(options: Record<string, unknown>, ...args: unknown[]) {
+              const model = Array.isArray(options.tools) && options.tools.length > 0 ? responsesModel : chatModel
+              normalizeModelCallOptions(options, model === responsesModel ? "responses" : "chat")
+              return Reflect.apply(model.doGenerate as (...values: unknown[]) => unknown, model, [options, ...args])
+            },
+            doStream(options: Record<string, unknown>, ...args: unknown[]) {
+              const model = Array.isArray(options.tools) && options.tools.length > 0 ? responsesModel : chatModel
+              normalizeModelCallOptions(options, model === responsesModel ? "responses" : "chat")
+              return Reflect.apply(model.doStream as (...values: unknown[]) => unknown, model, [options, ...args])
+            },
+          }
+        }
 
         function resolveModel(modelID: string) {
           const lower = modelID.toLowerCase()
@@ -86,9 +114,13 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
             const cleanID = modelID.replace(/^anthropic\//i, "")
             return gateway(anthropic(cleanID))
           }
-          if (lower.startsWith("openai/") || lower.includes("gpt") || lower.startsWith("o1") || lower.startsWith("o3")) {
+          if (lower.startsWith("openai/") || lower.startsWith("o1") || lower.startsWith("o3")) {
             const cleanID = modelID.replace(/^openai\//i, "")
             return gateway(openai.chat(cleanID))
+          }
+          const customPathMatch = /^([^/]+)\/(.+)$/.exec(modelID)
+          if (customPathMatch && !lower.startsWith("dynamic/")) {
+            return wrapModel(customOpenAI(customPathMatch[1], customPathMatch[2]))
           }
           return gateway(unified(modelID))
         }

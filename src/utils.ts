@@ -211,54 +211,70 @@ function resolveUrlString(input: Parameters<typeof fetch>[0], isRequest: boolean
   return ""
 }
 
+function rewriteFetchInput(
+  input: Parameters<typeof fetch>[0],
+  rewrittenURL: string | undefined,
+  isRequest: boolean,
+): Parameters<typeof fetch>[0] {
+  if (rewrittenURL === undefined) return input
+  if (isRequest) return new Request(rewrittenURL, input as Request)
+  return rewrittenURL
+}
+
+function getHostname(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return ""
+  }
+}
+
+async function patchedFetch(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit | undefined,
+  originalFetch: typeof fetch,
+): Promise<Response> {
+  const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
+  const urlStr = resolveUrlString(input, isRequest)
+  const baseURL = process.env.CLOUDFLARE_AIG_BASE_URL
+  const rewrittenURL = baseURL && urlStr.startsWith("https://gateway.ai.cloudflare.com/")
+    ? `${baseURL}${new URL(urlStr).pathname}`
+    : undefined
+  const rewrittenInput = rewriteFetchInput(input, rewrittenURL, isRequest)
+  const hostname = getHostname(urlStr)
+
+  if (hostname !== "gateway.ai.cloudflare.com") {
+    return originalFetch(rewrittenInput, init)
+  }
+
+  const api = new URL(urlStr).pathname.endsWith("/responses") ? "responses" : "chat"
+  const bodyStr = await extractBodyString(input, init)
+  if (!bodyStr) {
+    const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
+    cleanHeaders(headers, hostname)
+    return originalFetch(rewrittenInput, { ...init, headers })
+  }
+
+  try {
+    const parsed = JSON.parse(bodyStr)
+    cleanParams(parsed, api)
+    return await processFetchRequest(rewrittenInput, init, hostname, isRequest, parsed, originalFetch)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
+    const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
+    cleanHeaders(headers, hostname)
+    return originalFetch(rewrittenInput, { ...init, headers })
+  }
+}
+
 export function patchGlobalFetch(): void {
   if (globalThis.__byok_fetch_patched__) return
   globalThis.__byok_fetch_patched__ = true
   const originalFetch = globalThis.fetch
 
   globalThis.fetch = Object.assign(
-    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const isRequest = typeof input === "object" && input !== null && "url" in input && typeof (input as Request).url === "string"
-      const urlStr = resolveUrlString(input, isRequest)
-      const baseURL = process.env.CLOUDFLARE_AIG_BASE_URL
-      const rewrittenURL =
-        baseURL && urlStr.startsWith("https://gateway.ai.cloudflare.com/")
-          ? `${baseURL}${new URL(urlStr).pathname}`
-          : undefined
-      const rewrittenInput = rewrittenURL === undefined
-        ? input
-        : isRequest
-          ? new Request(rewrittenURL, input as Request)
-          : rewrittenURL
-
-      let hostname = ""
-      try {
-        hostname = new URL(urlStr).hostname
-      } catch {
-        // invalid URL or empty
-      }
-
-      if (hostname === "gateway.ai.cloudflare.com") {
-        const api = new URL(urlStr).pathname.endsWith("/responses") ? "responses" : "chat"
-        const bodyStr = await extractBodyString(input, init)
-        if (bodyStr) {
-          try {
-            const parsed = JSON.parse(bodyStr)
-            cleanParams(parsed, api)
-            return await processFetchRequest(rewrittenInput, init, hostname, isRequest, parsed, originalFetch)
-          } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
-            console.warn(`[CloudflareAIGatewayBYOK] Failed to parse request body JSON: ${msg}`)
-          }
-        }
-
-        const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined))
-        cleanHeaders(headers, hostname)
-        return originalFetch(rewrittenInput, { ...init, headers })
-      }
-
-      return originalFetch(rewrittenInput, init)
-    },
+    (input: Parameters<typeof fetch>[0], init?: RequestInit) => patchedFetch(input, init, originalFetch),
     originalFetch,
   )
 }

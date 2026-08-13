@@ -5,6 +5,55 @@ import { normalizeModelCallOptions, patchGlobalFetch, wrapModel } from "./utils.
 
 export const DEFAULT_BASE_URL = "https://gateway.ai.cloudflare.com/v1/compat"
 
+export type CustomOpenAIModel = Record<string, unknown> & {
+  doGenerate: (...args: never[]) => unknown
+  doStream: (...args: never[]) => unknown
+}
+
+export function createCustomOpenAIModel(
+  createOpenAI: (options?: unknown) => unknown,
+  accountId: string,
+  gatewayId: string,
+  apiKey: string,
+  customPath: string,
+  modelID: string,
+): CustomOpenAIModel {
+  const provider = createOpenAI({
+    baseURL: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${customPath}/v1`,
+    apiKey: "CF_TEMP_TOKEN",
+    headers: {
+      "cf-aig-authorization": `Bearer ${apiKey}`,
+      "cf-aig-collect-log-payload": "false",
+      "cf-aig-max-attempts": "1",
+      "cf-aig-skip-cache": "true",
+    },
+  }) as {
+    chat(modelID: string): CustomOpenAIModel
+    responses(modelID: string): CustomOpenAIModel
+  }
+  const chatModel = provider.chat(modelID)
+  const responsesModel = provider.responses(modelID)
+  const selectModel = (options: Record<string, unknown>): CustomOpenAIModel => {
+    if (Array.isArray(options.tools) && options.tools.length > 0) return responsesModel
+    return chatModel
+  }
+  const callModel = (method: "doGenerate" | "doStream", options: Record<string, unknown>, args: unknown[]) => {
+    const model = selectModel(options)
+    normalizeModelCallOptions(options, model === responsesModel ? "responses" : "chat")
+    return Reflect.apply(model[method], model, [options, ...args])
+  }
+  return {
+    __byokResponseAware: true,
+    ...chatModel,
+    doGenerate(options: Record<string, unknown>, ...args: unknown[]) {
+      return callModel("doGenerate", options, args)
+    },
+    doStream(options: Record<string, unknown>, ...args: unknown[]) {
+      return callModel("doStream", options, args)
+    },
+  }
+}
+
 function resolveBaseURL(): string {
   if (typeof process !== "undefined" && process.env?.CLOUDFLARE_AIG_BASE_URL) {
     return process.env.CLOUDFLARE_AIG_BASE_URL
@@ -75,35 +124,6 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
         const google = createGoogleGenerativeAI()
         const anthropic = createAnthropic()
         const openai = createOpenAI()
-        const customOpenAI = (customPath: string, modelID: string) => {
-          const provider = createOpenAI({
-            baseURL: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${customPath}/v1`,
-            apiKey: "CF_TEMP_TOKEN",
-            headers: {
-              "cf-aig-authorization": `Bearer ${apiKey}`,
-              "cf-aig-collect-log-payload": "false",
-              "cf-aig-max-attempts": "1",
-              "cf-aig-skip-cache": "true",
-            },
-          })
-          const chatModel = provider.chat(modelID) as Record<string, unknown>
-          const responsesModel = provider.responses(modelID) as Record<string, unknown>
-          return {
-            __byokResponseAware: true,
-            ...chatModel,
-            doGenerate(options: Record<string, unknown>, ...args: unknown[]) {
-              const model = Array.isArray(options.tools) && options.tools.length > 0 ? responsesModel : chatModel
-              normalizeModelCallOptions(options, model === responsesModel ? "responses" : "chat")
-              return Reflect.apply(model.doGenerate as (...values: unknown[]) => unknown, model, [options, ...args])
-            },
-            doStream(options: Record<string, unknown>, ...args: unknown[]) {
-              const model = Array.isArray(options.tools) && options.tools.length > 0 ? responsesModel : chatModel
-              normalizeModelCallOptions(options, model === responsesModel ? "responses" : "chat")
-              return Reflect.apply(model.doStream as (...values: unknown[]) => unknown, model, [options, ...args])
-            },
-          }
-        }
-
         function resolveModel(modelID: string) {
           const lower = modelID.toLowerCase()
           if (lower.startsWith("google/") || lower.startsWith("google-ai-studio/") || lower.includes("gemini")) {
@@ -120,7 +140,14 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
           }
           const customPathMatch = /^([^/]+)\/(.+)$/.exec(modelID)
           if (customPathMatch && !lower.startsWith("dynamic/")) {
-            return wrapModel(customOpenAI(customPathMatch[1], customPathMatch[2]))
+            return wrapModel(createCustomOpenAIModel(
+              createOpenAI as unknown as (options?: unknown) => unknown,
+              accountId,
+              gatewayId,
+              apiKey,
+              customPathMatch[1],
+              customPathMatch[2],
+            ))
           }
           return gateway(unified(modelID))
         }

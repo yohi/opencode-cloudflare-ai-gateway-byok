@@ -13,55 +13,19 @@ const modelStub = {
   api: { id: "openai/gpt-4o" },
 } as unknown as ModelV2Info
 
-const BASIC_FLOW_CHILD = "CLOUDFLARE_AIG_E2E_BASIC_FLOW_CHILD"
-const AUTH_FALLBACK_CHILD = "CLOUDFLARE_AIG_E2E_AUTH_FALLBACK_CHILD"
-const ENV_RESOLUTION_CHILD = "CLOUDFLARE_AIG_E2E_ENV_RESOLUTION_CHILD"
-const PROVIDER_ROUTING_CHILD = "CLOUDFLARE_AIG_E2E_PROVIDER_ROUTING_CHILD"
-const PARAMETER_NORMALIZATION_CHILD = "CLOUDFLARE_AIG_E2E_PARAMETER_NORMALIZATION_CHILD"
+const isChildProcess = process.env.CLOUDFLARE_AIG_E2E_CHILD === "1"
 
-async function runAuthFallbackTestInChild(testName: string): Promise<boolean> {
-  if (process.env[AUTH_FALLBACK_CHILD] === "1") return false
+async function runInChild(testName: string): Promise<void> {
 
   const child = Bun.spawn(
     [process.execPath, "test", import.meta.path, "-t", testName],
     {
-      env: { ...process.env, [AUTH_FALLBACK_CHILD]: "1" },
+      env: { ...process.env, CLOUDFLARE_AIG_E2E_CHILD: "1" },
       stdout: "inherit",
       stderr: "inherit",
     },
   )
   expect(await child.exited).toBe(0)
-  return true
-}
-
-async function runProviderRoutingTestInChild(testName: string): Promise<boolean> {
-  if (process.env[PROVIDER_ROUTING_CHILD] === "1") return false
-
-  const child = Bun.spawn(
-    [process.execPath, "test", import.meta.path, "-t", testName],
-    {
-      env: { ...process.env, [PROVIDER_ROUTING_CHILD]: "1" },
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  )
-  expect(await child.exited).toBe(0)
-  return true
-}
-
-async function runParameterNormalizationTestInChild(testName: string): Promise<boolean> {
-  if (process.env[PARAMETER_NORMALIZATION_CHILD] === "1") return false
-
-  const child = Bun.spawn(
-    [process.execPath, "test", import.meta.path, "-t", testName],
-    {
-      env: { ...process.env, [PARAMETER_NORMALIZATION_CHILD]: "1" },
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  )
-  expect(await child.exited).toBe(0)
-  return true
 }
 
 async function sendOpenAIRequest(options: Record<string, unknown>): Promise<void> {
@@ -112,19 +76,9 @@ describe("e2e setup", () => {
 })
 
 describe("E2E basic flow", () => {
-  test("basic flow sends a request to the mock gateway and receives a response", async () => {
-    if (process.env[BASIC_FLOW_CHILD] !== "1") {
-      const child = Bun.spawn(
-        [process.execPath, "test", import.meta.path, "-t", "basic flow"],
-        {
-          env: { ...process.env, [BASIC_FLOW_CHILD]: "1" },
-          stdout: "inherit",
-          stderr: "inherit",
-        },
-      )
-      expect(await child.exited).toBe(0)
-      return
-    }
+  test.skipIf(isChildProcess)("basic flow launches child", () => runInChild("basic flow"))
+
+  test.skipIf(!isChildProcess)("basic flow sends a request to the mock gateway and receives a response", async () => {
 
     const restoreEnv = clearEnv()
     try {
@@ -191,8 +145,12 @@ describe("E2E basic flow", () => {
 })
 
 describe("E2E auth fallback", () => {
-  test("uses CF_AIG_TOKEN when CLOUDFLARE_API_TOKEN is absent", async () => {
-    if (await runAuthFallbackTestInChild("uses CF_AIG_TOKEN when CLOUDFLARE_API_TOKEN is absent")) return
+  test.skipIf(isChildProcess)("auth fallback launches child tests", async () => {
+    await runInChild("uses CF_AIG_TOKEN when CLOUDFLARE_API_TOKEN is absent")
+    await runInChild("uses options.apiKey when both env tokens are absent")
+  })
+
+  test.skipIf(!isChildProcess)("uses CF_AIG_TOKEN when CLOUDFLARE_API_TOKEN is absent", async () => {
 
     const restoreEnv = clearEnv()
     try {
@@ -218,8 +176,7 @@ describe("E2E auth fallback", () => {
     }
   })
 
-  test("uses options.apiKey when both env tokens are absent", async () => {
-    if (await runAuthFallbackTestInChild("uses options.apiKey when both env tokens are absent")) return
+  test.skipIf(!isChildProcess)("uses options.apiKey when both env tokens are absent", async () => {
 
     const restoreEnv = clearEnv()
     try {
@@ -251,19 +208,9 @@ describe("E2E auth fallback", () => {
 })
 
 describe("E2E env resolution", () => {
-  test("resolves {env:...} placeholders in options", async () => {
-    if (process.env[ENV_RESOLUTION_CHILD] !== "1") {
-      const child = Bun.spawn(
-        [process.execPath, "test", import.meta.path, "-t", "env resolution"],
-        {
-          env: { ...process.env, [ENV_RESOLUTION_CHILD]: "1" },
-          stdout: "inherit",
-          stderr: "inherit",
-        },
-      )
-      expect(await child.exited).toBe(0)
-      return
-    }
+  test.skipIf(isChildProcess)("env resolution launches child", () => runInChild("env resolution"))
+
+  test.skipIf(!isChildProcess)("resolves {env:...} placeholders in options", async () => {
 
     const restoreEnv = clearEnv()
     try {
@@ -296,6 +243,12 @@ describe("E2E env resolution", () => {
 })
 
 describe("E2E provider routing", () => {
+  test.skipIf(isChildProcess)("provider routing launches child tests", async () => {
+    await runInChild("routes openai/gpt-4o to openai provider")
+    await runInChild("routes anthropic/claude-sonnet-4 to anthropic provider")
+    await runInChild("routes google/gemini-1.5-flash to google provider")
+  })
+
   async function runModel(gateway: MockGateway, modelID: string): Promise<CapturedRequest> {
     const restoreEnv = clearEnv()
     const restoreE2EEnv = setE2EEnv(gateway, {
@@ -350,8 +303,7 @@ describe("E2E provider routing", () => {
     }
   }
 
-  test("routes openai/gpt-4o to openai provider", async () => {
-    if (await runProviderRoutingTestInChild("routes openai/gpt-4o to openai provider")) return
+  test.skipIf(!isChildProcess)("routes openai/gpt-4o to openai provider", async () => {
 
     await withMockGateway(async (gateway) => {
       const request = await runModel(gateway, "openai/gpt-4o")
@@ -361,8 +313,7 @@ describe("E2E provider routing", () => {
     })
   })
 
-  test("routes anthropic/claude-sonnet-4 to anthropic provider", async () => {
-    if (await runProviderRoutingTestInChild("routes anthropic/claude-sonnet-4 to anthropic provider")) return
+  test.skipIf(!isChildProcess)("routes anthropic/claude-sonnet-4 to anthropic provider", async () => {
 
     await withMockGateway(async (gateway) => {
       const request = await runModel(gateway, "anthropic/claude-sonnet-4")
@@ -372,8 +323,7 @@ describe("E2E provider routing", () => {
     })
   })
 
-  test("routes google/gemini-1.5-flash to google provider", async () => {
-    if (await runProviderRoutingTestInChild("routes google/gemini-1.5-flash to google provider")) return
+  test.skipIf(!isChildProcess)("routes google/gemini-1.5-flash to google provider", async () => {
 
     await withMockGateway(async (gateway) => {
       const request = await runModel(gateway, "google/gemini-1.5-flash")
@@ -385,6 +335,11 @@ describe("E2E provider routing", () => {
 })
 
 describe("E2E parameter normalization", () => {
+  test.skipIf(isChildProcess)("parameter normalization launches child tests", async () => {
+    await runInChild("normalizes reasoningEffort to reasoning_effort = none when tools are present")
+    await runInChild("converts maxTokens to max_completion_tokens")
+  })
+
   type GatewaySdk = {
     languageModel(modelID: string): LanguageModelV3
   }
@@ -443,8 +398,7 @@ describe("E2E parameter normalization", () => {
     }
   }
 
-  test("normalizes reasoningEffort to reasoning_effort = none when tools are present", async () => {
-    if (await runParameterNormalizationTestInChild("normalizes reasoningEffort to reasoning_effort = none when tools are present")) return
+  test.skipIf(!isChildProcess)("normalizes reasoningEffort to reasoning_effort = none when tools are present", async () => {
 
     await withMockGateway(async (gateway) => {
       const body = await captureOpenAIRequest(gateway, {
@@ -458,8 +412,7 @@ describe("E2E parameter normalization", () => {
     })
   })
 
-  test("converts maxTokens to max_completion_tokens", async () => {
-    if (await runParameterNormalizationTestInChild("converts maxTokens to max_completion_tokens")) return
+  test.skipIf(!isChildProcess)("converts maxTokens to max_completion_tokens", async () => {
 
     await withMockGateway(async (gateway) => {
       const body = await captureOpenAIRequest(gateway, {

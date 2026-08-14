@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.1.0...v1.1.1) (2026-08-14)
+
+
+### 🐛 Bug Fixes
+
+* **ci:** release時のGitHub Packages認証を追加 ([#34](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/issues/34)) ([3a77576](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/3a7757658e2e5de4243a0c898f491d281123c4a6))
+
 ## [1.1.0](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.5...v1.1.0) (2026-08-14)
 
 

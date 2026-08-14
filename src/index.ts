@@ -36,15 +36,16 @@ export function createCloudflareAIGatewayBYOK(options: Record<string, unknown> =
   const google = createGoogleGenerativeAI()
   const anthropic = createAnthropic()
   const openai = createOpenAI()
+  const parsedOptions = gatewayOptions(opts, gatewayMetadata(opts))
   const customOpenAI = (customPath: string, modelID: string) => {
     const provider = createOpenAI({
       baseURL: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${customPath}/v1`,
       apiKey: "CF_TEMP_TOKEN",
       headers: {
         "cf-aig-authorization": `Bearer ${apiKey}`,
-        "cf-aig-collect-log-payload": "false",
+        "cf-aig-collect-log-payload": parsedOptions.collectLog !== undefined ? String(parsedOptions.collectLog) : "true",
         "cf-aig-max-attempts": "1",
-        "cf-aig-skip-cache": "true",
+        "cf-aig-skip-cache": parsedOptions.skipCache !== undefined ? String(parsedOptions.skipCache) : "true",
       },
     })
     const chatModel = provider.chat(modelID) as Record<string, unknown>

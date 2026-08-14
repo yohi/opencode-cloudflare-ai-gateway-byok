@@ -37,6 +37,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --ignore-scripts --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: ${{ steps.release.outputs.release_created }}
 
       - name: Test

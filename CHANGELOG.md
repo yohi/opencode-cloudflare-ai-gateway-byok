@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.5...v1.1.0) (2026-08-14)
+
+
+### ✨ Features
+
+* cf-aig-collect-log-payloadのデフォルト値をtrueに変更しオプション切り替えに対応 ([#32](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/issues/32)) ([150a6bd](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/150a6bd2c001b2728c49727f40651231288706d7))
+
+
+### 🐛 Bug Fixes
+
+* Cloudflare Custom ProviderのResponses APIルーティングを修正 ([#30](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/issues/30)) ([536ace6](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/commit/536ace64964e531c563499ee2b66994663a484b1))
+
 ## [1.0.5](https://github.com/yohi/opencode-cloudflare-ai-gateway-byok/compare/v1.0.4...v1.0.5) (2026-08-12)
 
 

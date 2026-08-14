@@ -1,9 +1,66 @@
 import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions } from "./env.js"
 import type { PluginContext } from "@opencode-ai/plugin/v2/effect"
-import { patchGlobalFetch, wrapModel } from "./utils.js"
+import { normalizeModelCallOptions, patchGlobalFetch, wrapModel } from "./utils.js"
 
 export const DEFAULT_BASE_URL = "https://gateway.ai.cloudflare.com/v1/compat"
+
+export type CustomOpenAIModel = Record<string, unknown> & {
+  doGenerate: (...args: never[]) => unknown
+  doStream: (...args: never[]) => unknown
+}
+
+export function createCustomOpenAIModel(
+  createOpenAI: (options?: unknown) => unknown,
+  accountId: string,
+  gatewayId: string,
+  apiKey: string,
+  customPath: string,
+  modelID: string,
+  options?: { collectLog?: boolean; skipCache?: boolean },
+): CustomOpenAIModel {
+  const collectLogHeader = options?.collectLog !== undefined ? String(options.collectLog) : "true"
+  const skipCacheHeader = options?.skipCache !== undefined ? String(options.skipCache) : "true"
+
+  const provider = createOpenAI({
+    baseURL: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${customPath}/v1`,
+    apiKey: "CF_TEMP_TOKEN",
+    headers: {
+      "cf-aig-authorization": `Bearer ${apiKey}`,
+      "cf-aig-collect-log-payload": collectLogHeader,
+      "cf-aig-max-attempts": "1",
+      "cf-aig-skip-cache": skipCacheHeader,
+    },
+  }) as {
+    chat(modelID: string): CustomOpenAIModel
+    responses(modelID: string): CustomOpenAIModel
+  }
+  const chatModel = provider.chat(modelID)
+  const responsesModel = provider.responses(modelID)
+  const selectModel = (requestOptions: Record<string, unknown>): CustomOpenAIModel => {
+    if (Array.isArray(requestOptions.tools) && requestOptions.tools.length > 0) return responsesModel
+    return chatModel
+  }
+  const callModel = (
+    method: "doGenerate" | "doStream",
+    requestOptions: Record<string, unknown>,
+    args: unknown[],
+  ) => {
+    const model = selectModel(requestOptions)
+    normalizeModelCallOptions(requestOptions, model === responsesModel ? "responses" : "chat")
+    return Reflect.apply(model[method], model, [requestOptions, ...args])
+  }
+  return {
+    __byokResponseAware: true,
+    ...chatModel,
+    doGenerate(requestOptions: Record<string, unknown>, ...args: unknown[]) {
+      return callModel("doGenerate", requestOptions, args)
+    },
+    doStream(requestOptions: Record<string, unknown>, ...args: unknown[]) {
+      return callModel("doStream", requestOptions, args)
+    },
+  }
+}
 
 function resolveBaseURL(): string {
   if (typeof process !== "undefined" && process.env?.CLOUDFLARE_AIG_BASE_URL) {
@@ -75,7 +132,6 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
         const google = createGoogleGenerativeAI()
         const anthropic = createAnthropic()
         const openai = createOpenAI()
-
         function resolveModel(modelID: string) {
           const lower = modelID.toLowerCase()
           if (lower.startsWith("google/") || lower.startsWith("google-ai-studio/") || lower.includes("gemini")) {
@@ -86,9 +142,21 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
             const cleanID = modelID.replace(/^anthropic\//i, "")
             return gateway(anthropic(cleanID))
           }
-          if (lower.startsWith("openai/") || lower.includes("gpt") || lower.startsWith("o1") || lower.startsWith("o3")) {
+          if (lower.startsWith("openai/") || lower.startsWith("o1") || lower.startsWith("o3")) {
             const cleanID = modelID.replace(/^openai\//i, "")
             return gateway(openai.chat(cleanID))
+          }
+          const customPathMatch = /^([^/]+)\/(.+)$/.exec(modelID)
+          if (customPathMatch && !lower.startsWith("dynamic/")) {
+            return wrapModel(createCustomOpenAIModel(
+              createOpenAI as unknown as (options?: unknown) => unknown,
+              accountId,
+              gatewayId,
+              apiKey,
+              customPathMatch[1],
+              customPathMatch[2],
+              options,
+            ))
           }
           return gateway(unified(modelID))
         }

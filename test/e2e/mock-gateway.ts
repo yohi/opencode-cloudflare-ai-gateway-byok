@@ -2,6 +2,7 @@ export interface CapturedRequest {
   accountId: string
   gatewayId: string
   provider: string
+  path: string
   headers: Record<string, string>
   body: unknown
 }
@@ -31,24 +32,45 @@ export async function startMockGateway(options?: MockGatewayOptions): Promise<Mo
     hostname: "127.0.0.1",
     async fetch(req: Request) {
       const url = new URL(req.url)
-      const match = /^\/accounts\/([^/]+)\/ai\/gateway\/([^/]+)\/([^/]+)$/.exec(url.pathname)
-      if (!match || req.method !== "POST") {
+      const directMatch = /^\/accounts\/([^/]+)\/ai\/gateway\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+      const universalMatch = /^\/v1\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+      const customMatch = /^\/v1\/([^/]+)\/([^/]+)\/([^/]+)\/v1\/(chat\/completions|responses)$/.exec(url.pathname)
+      if ((!directMatch && !universalMatch && !customMatch) || req.method !== "POST") {
         return new Response("Not Found", { status: 404 })
       }
 
-      const [, accountId, gatewayId, provider] = match
       const body = await req.json().catch(() => undefined)
+      const universalRequest = Array.isArray(body) ? body[0] : undefined
+      const accountId = directMatch?.[1] ?? universalMatch?.[1] ?? customMatch?.[1] ?? ""
+      const gatewayId = directMatch?.[2] ?? universalMatch?.[2] ?? customMatch?.[2] ?? ""
+      const wireProvider = directMatch?.[3] ?? customMatch?.[3] ??
+        (universalRequest && typeof universalRequest === "object" && "provider" in universalRequest
+          ? String(universalRequest.provider)
+          : "")
+      const provider = wireProvider === "google-ai-studio" ? "google" : wireProvider
+      const customProvider = customMatch !== undefined && !["openai", "anthropic", "google"].includes(provider)
+      const query = universalRequest && typeof universalRequest === "object" && "query" in universalRequest
+        ? universalRequest.query
+        : body
+      const googleModelMatch = provider === "google" && universalRequest &&
+          typeof universalRequest === "object" && "endpoint" in universalRequest &&
+          typeof universalRequest.endpoint === "string"
+        ? /\/models\/([^/:]+):/.exec(universalRequest.endpoint)
+        : undefined
       captured.push({
         accountId,
         gatewayId,
         provider,
+        path: url.pathname,
         headers: Object.fromEntries(req.headers.entries()),
-        body,
+        body: googleModelMatch?.[1] && query && typeof query === "object"
+          ? { ...query, model: decodeURIComponent(googleModelMatch[1]) }
+          : query,
       })
 
       const status = statuses.get(provider) ?? options?.defaultStatus ?? 200
-      const responseBody = responses.get(provider) ?? defaultResponse(provider)
-      return Response.json(responseBody, { status })
+      const responseBody = responses.get(provider) ?? defaultResponse(provider, customProvider, customMatch?.[4] === "responses")
+      return Response.json(responseBody, { status, headers: { "cf-aig-step": "0" } })
     },
   })
 
@@ -73,8 +95,21 @@ export async function stopMockGateway(gateway: MockGateway): Promise<void> {
   servers.delete(gateway)
 }
 
-function defaultResponse(provider: string): unknown {
-  if (provider === "openai") {
+function defaultResponse(provider: string, customProvider = false, responsesApi = false): unknown {
+  if (provider === "openai" || customProvider) {
+    if (responsesApi) {
+      return {
+        id: "resp-mock",
+        object: "response",
+        model: "custom-model",
+        output: [{
+          id: "msg-mock",
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Hello from mock", annotations: [] }],
+        }],
+      }
+    }
     return {
       id: "chatcmpl-mock",
       object: "chat.completion",
@@ -89,6 +124,21 @@ function defaultResponse(provider: string): unknown {
       role: "assistant",
       content: [{ type: "text", text: "Hello from mock" }],
       model: "claude-sonnet-4",
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }
+  }
+  if (provider === "google") {
+    return {
+      candidates: [{
+        content: { role: "model", parts: [{ text: "Hello from mock" }] },
+        finishReason: "STOP",
+        index: 0,
+      }],
+      usageMetadata: {
+        promptTokenCount: 1,
+        candidatesTokenCount: 1,
+        totalTokenCount: 2,
+      },
     }
   }
   return { ok: true }

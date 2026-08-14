@@ -2,6 +2,7 @@ import { describe, expect, test, afterEach, mock } from "bun:test"
 import { Effect } from "effect"
 import { gatewayConfig, gatewayMetadata, gatewayOptions, stringOption } from "../src/env.js"
 import { CloudflareAIGatewayBYOK } from "../src/cloudflare-ai-gateway-byok.js"
+import { cleanParams, normalizeModelCallOptions } from "../src/utils.js"
 import { createMockPluginContext, type LanguageEvent, type SdkEvent } from "./plugin-context.js"
 
 function withEnv(entries: Record<string, string | undefined>): () => void {
@@ -34,6 +35,19 @@ describe("stringOption", () => {
     expect(stringOption({ key: 123 }, "key")).toBeUndefined()
     expect(stringOption({ key: undefined }, "key")).toBeUndefined()
     expect(stringOption({}, "key")).toBeUndefined()
+  })
+})
+
+describe("normalizeModelCallOptions", () => {
+  test("preserves native Responses reasoning effort when legacy fields are absent", () => {
+    const record: Record<string, unknown> = {
+      model: "gpt-4o",
+      reasoning: { effort: "medium", summary: "auto" },
+    }
+
+    normalizeModelCallOptions(record, "responses")
+
+    expect(record.reasoning).toEqual({ effort: "medium", summary: "auto" })
   })
 })
 
@@ -251,7 +265,7 @@ describe("patchGlobalFetch & utils", () => {
     delete globalThis.__byok_fetch_patched__
   })
 
-  test("wrapModel transforms maxTokens to max_completion_tokens and deletes maxTokens", async () => {
+  test("wrapModel transforms maxTokens to maxOutputTokens and deletes maxTokens", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -263,9 +277,9 @@ describe("patchGlobalFetch & utils", () => {
     const wrapped = wrapModel(mockModel)
     wrapped.doGenerate({ maxTokens: 100 })
 
-    expect(receivedOptions?.max_completion_tokens).toBe(100)
+    expect(receivedOptions?.maxOutputTokens).toBe(100)
     expect(receivedOptions?.maxTokens).toBeUndefined()
-    expect(receivedOptions?.maxOutputTokens).toBeUndefined()
+    expect(receivedOptions?.max_completion_tokens).toBeUndefined()
   })
 
   test("cleanParams converts reasoningEffort to reasoning_effort = 'none' when tools are present for OpenAI models", async () => {
@@ -293,7 +307,7 @@ describe("patchGlobalFetch & utils", () => {
     expect(body.reasoning_effort).toBeUndefined()
   })
 
-  test("wrapModel sets reasoning_effort = 'none' when tools are present for OpenAI models", async () => {
+  test("wrapModel sets providerOptions.openai.reasoningEffort = 'none' when tools are present for OpenAI models", async () => {
     const { wrapModel } = await import("../src/utils.js")
     let receivedOptions: Record<string, unknown> | undefined
     const mockModel = {
@@ -306,7 +320,10 @@ describe("patchGlobalFetch & utils", () => {
     wrapped.doGenerate({ model: "openai/gpt-4o", tools: [{ type: "function" }], reasoningEffort: "medium" })
 
     expect(receivedOptions?.reasoningEffort).toBeUndefined()
-    expect(receivedOptions?.reasoning_effort).toBe("none")
+    expect(receivedOptions?.reasoning_effort).toBeUndefined()
+    expect(receivedOptions?.providerOptions).toEqual({
+      openai: { reasoningEffort: "none" },
+    })
   })
 
   test("cleanParams converts max_tokens to max_completion_tokens, deleting max_tokens and maxOutputTokens", async () => {
@@ -428,6 +445,8 @@ describe("CloudflareAIGatewayBYOK", () => {
   let createAiGatewayCalls: Array<unknown> = []
   let unifiedModelCalls: Array<string> = []
   let googleModelCalls: Array<string> = []
+  let directOpenAIModelCalls: Array<{ modelId: string; options: unknown }> = []
+  let responseOpenAIModelCalls: Array<{ modelId: string; options: unknown }> = []
 
   mock.module("ai-gateway-provider", () => ({
     createAiGateway: (opts: unknown) => {
@@ -455,8 +474,15 @@ describe("CloudflareAIGatewayBYOK", () => {
   }))
 
   mock.module("ai-gateway-provider/providers/openai", () => ({
-    createOpenAI: () => ({
-      chat: (modelId: string) => ({ openaiModel: modelId }),
+    createOpenAI: (options: unknown = {}) => ({
+      chat: (modelId: string) => {
+        directOpenAIModelCalls.push({ modelId, options })
+        return { openaiModel: modelId, openaiOptions: options, doGenerate: (callOptions: unknown) => ({ api: "chat", callOptions }) }
+      },
+      responses: (modelId: string) => {
+        responseOpenAIModelCalls.push({ modelId, options })
+        return { openaiModel: modelId, openaiOptions: options, doGenerate: (callOptions: unknown) => ({ api: "responses", callOptions }) }
+      },
     }),
   }))
 
@@ -464,6 +490,80 @@ describe("CloudflareAIGatewayBYOK", () => {
     createAiGatewayCalls = []
     unifiedModelCalls = []
     googleModelCalls = []
+    directOpenAIModelCalls = []
+    responseOpenAIModelCalls = []
+  })
+
+  test("uses Responses API for custom provider requests with tools", async () => {
+    const restore = withEnv({
+      CLOUDFLARE_ACCOUNT_ID: undefined,
+      CLOUDFLARE_GATEWAY_ID: undefined,
+      CLOUDFLARE_API_TOKEN: undefined,
+      CF_AIG_TOKEN: undefined,
+    })
+    afterEach(restore)
+
+    const ctx = createMockPluginContext()
+    await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
+    const model = { providerID: "cloudflare-ai-gateway-byok", api: { id: "custom-octg/gpt-5.6-luna" } } as SdkEvent["model"]
+    const sdkEvt: SdkEvent = { package: "@yohi/cloudflare-ai-gateway-byok", options: baseOptions(), model }
+    const sdkResult = ctx.runSdk(sdkEvt)
+    if (sdkResult) await Effect.runPromise(sdkResult)
+    const languageEvt: LanguageEvent = { model, sdk: sdkEvt.sdk, options: {} }
+    const languageResult = ctx.runLanguage(languageEvt)
+    if (languageResult) await Effect.runPromise(languageResult)
+
+    const languageModel = languageEvt.language as { doGenerate(options: Record<string, unknown>): unknown }
+    languageModel.doGenerate({ tools: Array.from({ length: 182 }, () => ({ type: "function" })) })
+
+    expect(responseOpenAIModelCalls).toHaveLength(1)
+    expect(responseOpenAIModelCalls[0]?.modelId).toBe("gpt-5.6-luna")
+  })
+
+  test("routes custom-octg models to the direct custom OpenAI-compatible endpoint", async () => {
+    const restore = withEnv({
+      CLOUDFLARE_ACCOUNT_ID: undefined,
+      CLOUDFLARE_GATEWAY_ID: undefined,
+      CLOUDFLARE_API_TOKEN: undefined,
+      CF_AIG_TOKEN: undefined,
+    })
+    afterEach(restore)
+
+    const ctx = createMockPluginContext()
+    await Effect.runPromise(Effect.scoped(CloudflareAIGatewayBYOK(ctx as unknown as import("@opencode-ai/plugin/v2/effect").PluginContext)))
+
+    const sdkEvt: SdkEvent = {
+      package: "@yohi/cloudflare-ai-gateway-byok",
+      options: baseOptions(),
+      model: { providerID: "cloudflare-ai-gateway-byok", api: { id: "custom-octg/gpt-5.6-sol" } } as SdkEvent["model"],
+    }
+    const sdkResult = ctx.runSdk(sdkEvt)
+    if (sdkResult) await Effect.runPromise(sdkResult)
+    const languageEvt: LanguageEvent = {
+      model: sdkEvt.model,
+      sdk: sdkEvt.sdk,
+      options: {},
+    }
+    const languageResult = ctx.runLanguage(languageEvt)
+    if (languageResult) await Effect.runPromise(languageResult)
+
+    expect(unifiedModelCalls).toHaveLength(0)
+    expect(createAiGatewayCalls).toHaveLength(1)
+    expect(directOpenAIModelCalls).toEqual([
+      {
+        modelId: "gpt-5.6-sol",
+        options: {
+          baseURL: "https://gateway.ai.cloudflare.com/v1/account/gateway/custom-octg/v1",
+          apiKey: "CF_TEMP_TOKEN",
+          headers: {
+            "cf-aig-authorization": "Bearer apiKey",
+            "cf-aig-collect-log-payload": "true",
+            "cf-aig-max-attempts": "1",
+            "cf-aig-skip-cache": "true",
+          },
+        },
+      },
+    ])
   })
 
   function baseOptions() {
@@ -473,6 +573,22 @@ describe("CloudflareAIGatewayBYOK", () => {
       apiKey: "apiKey",
     }
   }
+
+  test("normalizes reasoning_effort to Responses API reasoning.effort", () => {
+    const request = {
+      model: "gpt-5.6-luna",
+      reasoning_effort: "none",
+      tools: [{ type: "function" }],
+    }
+
+    cleanParams(request, "responses")
+
+    expect(request as unknown).toEqual({
+      model: "gpt-5.6-luna",
+      reasoning: { effort: "none" },
+      tools: [{ type: "function" }],
+    })
+  })
 
   test("sdk callback creates gateway when package is @yohi/cloudflare-ai-gateway-byok", async () => {
     const restore = withEnv({

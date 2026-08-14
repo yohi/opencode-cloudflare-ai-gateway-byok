@@ -17,15 +17,19 @@ export function createCustomOpenAIModel(
   apiKey: string,
   customPath: string,
   modelID: string,
+  options?: { collectLog?: boolean; skipCache?: boolean },
 ): CustomOpenAIModel {
+  const collectLogHeader = options?.collectLog !== undefined ? String(options.collectLog) : "true"
+  const skipCacheHeader = options?.skipCache !== undefined ? String(options.skipCache) : "true"
+
   const provider = createOpenAI({
     baseURL: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${customPath}/v1`,
     apiKey: "CF_TEMP_TOKEN",
     headers: {
       "cf-aig-authorization": `Bearer ${apiKey}`,
-      "cf-aig-collect-log-payload": "false",
+      "cf-aig-collect-log-payload": collectLogHeader,
       "cf-aig-max-attempts": "1",
-      "cf-aig-skip-cache": "true",
+      "cf-aig-skip-cache": skipCacheHeader,
     },
   }) as {
     chat(modelID: string): CustomOpenAIModel
@@ -147,6 +151,7 @@ export const CloudflareAIGatewayBYOK = (ctx: PluginContext) =>
               apiKey,
               customPathMatch[1],
               customPathMatch[2],
+              options,
             ))
           }
           return gateway(unified(modelID))

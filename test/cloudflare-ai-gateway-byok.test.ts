@@ -557,7 +557,7 @@ describe("CloudflareAIGatewayBYOK", () => {
           apiKey: "CF_TEMP_TOKEN",
           headers: {
             "cf-aig-authorization": "Bearer apiKey",
-            "cf-aig-collect-log-payload": "false",
+            "cf-aig-collect-log-payload": "true",
             "cf-aig-max-attempts": "1",
             "cf-aig-skip-cache": "true",
           },

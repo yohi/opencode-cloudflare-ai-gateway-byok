@@ -37,23 +37,27 @@ export function createCustomOpenAIModel(
   }
   const chatModel = provider.chat(modelID)
   const responsesModel = provider.responses(modelID)
-  const selectModel = (options: Record<string, unknown>): CustomOpenAIModel => {
-    if (Array.isArray(options.tools) && options.tools.length > 0) return responsesModel
+  const selectModel = (requestOptions: Record<string, unknown>): CustomOpenAIModel => {
+    if (Array.isArray(requestOptions.tools) && requestOptions.tools.length > 0) return responsesModel
     return chatModel
   }
-  const callModel = (method: "doGenerate" | "doStream", options: Record<string, unknown>, args: unknown[]) => {
-    const model = selectModel(options)
-    normalizeModelCallOptions(options, model === responsesModel ? "responses" : "chat")
-    return Reflect.apply(model[method], model, [options, ...args])
+  const callModel = (
+    method: "doGenerate" | "doStream",
+    requestOptions: Record<string, unknown>,
+    args: unknown[],
+  ) => {
+    const model = selectModel(requestOptions)
+    normalizeModelCallOptions(requestOptions, model === responsesModel ? "responses" : "chat")
+    return Reflect.apply(model[method], model, [requestOptions, ...args])
   }
   return {
     __byokResponseAware: true,
     ...chatModel,
-    doGenerate(options: Record<string, unknown>, ...args: unknown[]) {
-      return callModel("doGenerate", options, args)
+    doGenerate(requestOptions: Record<string, unknown>, ...args: unknown[]) {
+      return callModel("doGenerate", requestOptions, args)
     },
-    doStream(options: Record<string, unknown>, ...args: unknown[]) {
-      return callModel("doStream", options, args)
+    doStream(requestOptions: Record<string, unknown>, ...args: unknown[]) {
+      return callModel("doStream", requestOptions, args)
     },
   }
 }
